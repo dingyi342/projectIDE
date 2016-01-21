@@ -1,8 +1,8 @@
 ;;; projectIDE.el --- project configuration file
 
-;; Copyright (C) 2015 Mola Tang
-;; Author: Mola Tang <Mola@molamola.xyz>
-;; URL:
+;; Copyright (C) 2015 Mola-T
+;; Author: Mola-T <Mola@molamola.xyz>
+;; URL: https://github.com/mola-T/projectIDE
 ;; Version: 0.1
 ;; Package-Requires: ((cl-lib.el "0.5"))
 ;; Keywords: project, convenience
@@ -37,12 +37,35 @@
 It works as the last guard of empty default directory.
 So this value does not suppose to be changed.")
 
+;;; Customization
+(defgroup projectIDE nil
+  "Managing projects like an IDE."
+  :tag "projectIDE"
+  :group 'tools
+  :group 'convenience)
+(defgroup projectIDE-environment-values nil
+  "Store values for all projects."
+  :tag "Enviroment Values"
+  :group 'projectIDE)
+(defgroup projectIDE-project-creation-values nil
+  "Store values for all projects."
+  :tag "Projection Creation"
+  :group 'projectIDE)
+
+(defcustom projectIDE-database-path
+  (concat (directory-file-name user-emacs-directory) "/prjectIDE")
+  "Path for storing projectIDE database.\nRemove trailing \"/\" when changing!"
+  :tag "Main database path"
+  :type 'directory
+  :group 'projectIDE-environment-values)
+
 (defcustom projectIDE-create-require-confirm t
   "Require confirmation when creating project?
 If this value is t, projectIDE will ask for confirmationbefore creating project.
 Other values skip the confirmation."
-  :group 'projectIDE
-  :type 'boolean)
+  :tag "Require confirmation when creating project?"
+  :type 'boolean
+  :group 'projectIDE-project-creation-values)
 
 
 ;; A prototype for the real function
@@ -102,6 +125,15 @@ So it exists for enchancing startup speed."
              (message "Project name cannot be empty string"))) ;; Else of Null string guard
       
       (message "Template directory \"%s\" error\nEither not exists, not directory or not accessible." templateDir))))
+
+(defun projectIDE-initialize ()
+  "Document."
+  (interactive)
+  (message "Directory directory: %s" (concat projectIDE-database-path "/project.cache"))
+  )
+
+(projectIDE-initialize)
+;;(defun projectIDE-cmake)
   
 (provide 'projectIDE)
 ;;; projectIDE.el ends here
