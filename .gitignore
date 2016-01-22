@@ -1,0 +1,7 @@
+/elpa
+/.cask
+/test
+*.elc
+*~
+[#]*[#]
+/TAGS
