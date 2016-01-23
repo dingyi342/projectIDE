@@ -72,7 +72,7 @@ Other values skip the confirmation."
   :group 'projectIDE-project-creation)
 
 (defun trim-string (str)
-  "Trim leading and tailing whitespace from STR.
+  "Return trimmed leading and tailing whitespace from STR.
 
 STR
 Type:\t\t string
@@ -82,29 +82,55 @@ Descrip.:\t String to be trimmed."
                             ""
                             str))
 
-(defun serialize (data)
-  "Return string of serialized DATA."
+(defun projectIDE-serialize (data)
+  "Return a single string of serialized DATA.
+The string begins with a start flag \\n#### and the symbol name.
+The string ends with an end flag \\n##END###.
+The real data is in the middle.
+
+Example:
+\t\(setq foo '\(\"Hello\" \"World\"\)\)
+\t\(projectIDE-serialize 'foo\)
+\t=>\t\"
+\t\t####foo
+\t\t\(\"Hello\" \"World\"\)
+\t\t###END###\"
+
+DATA
+Type:\t\t symbol
+Descrip.:\t Any symbol with ascii data."
   (let ((symbol (symbol-name data))
         (value (symbol-value data)))
-    ;; (message "Symbol is %s" symbol) ;;;;; Debug
-    ;; (message "Data is %s" value) ;;;;; Debug
-    (cond
-     ((stringp value)
-      (with-temp-buffer
-        (insert "####" symbol "\n"
-                "###s\n"
-                "#" value "\n")
-        (buffer-string)))
-     (t nil)
-     (nil nil))))
+    (with-temp-buffer
+      (insert "\n####" symbol "\n")
+      (insert (prin1-to-string value))
+      (insert "\n###END###")
+      (buffer-string))))
 
 
-
-(defun file<<data (append file data &rest moredata)
+(defun fout<<projectIDE (append file data &rest moredata)
        "Write data to file.
 
+This function is safe.
+It checks the accessibilty of file.
+Return NIL if file is not accessable.
+It checks the data for a valid symbol.
+Return NIL if data value is void.
+It checks each of the moredata for a valid symbol.
+If any candidate consists invalid symbol, NIL is return.
+However, invalid symbol found in moredata will not terminate
+the output stream.  The invalid symbol is ignored instead.
+Error message will be printed and proceed to next candidate.
+
+It is designed to simulate C++ std::cout.
+
+Example:
+\(if \(file<<data nil \"~\\Documents\\foo.txt\" 'foo 'bar 'hello 'world\)
+    \(message \"All success.\"\)
+  \(message \"Some problem.\"\)\)
+
 APPEND
-Type:\t\t boolean
+Type:\t\t bool
 Descrip.:\t If non-nil append, otherwise overwrite.
 
 FILE
@@ -117,9 +143,16 @@ Type:\t\t symbol
 Descrip.:\t Serialize data holds by symbol.
 
 MOREDATA
-Type:\t symbol
-Descrip.:\t Same as DATA.  Can serialize multiple symbols."
-       (catch 'fileError
+Type:\t\t symbol
+Descrip.:\t Same as DATA.  Can serialize multiple symbols.
+\t\t\t MOREDATA will append to FILE no matter what APPEND is."
+       (catch 'Error
+         ;; CHeck file symbol
+         (unless (stringp file)
+           (message "FILE needs to be in STRING.")
+           (throw 'Error nil))
+
+         ;; Check file accessibility
          (unless (and (file-exists-p file) (file-writable-p file))
            (let ((parentPath (file-name-directory file)))
              (when (or (file-directory-p parentPath)
@@ -127,10 +160,67 @@ Descrip.:\t Same as DATA.  Can serialize multiple symbols."
                        (file-directory-p parentPath))
                (write-region "" nil file nil 'inhibit nil 'exc1))
              (unless (and (file-exists-p file) (file-writable-p file))
-               (throw 'fileError "Error writing file!"))))
-         (write-region (serialize data) nil file append 'inhibit)))
+               (message "Error writing file!")
+               (throw 'Error nil))))
 
-(defun data<< (file &rest morefile)
+         ;; Serialize first entry
+         (unless (boundp data)
+           (message "Symbol '%s' is not defined." (symbol-name data))
+           (throw 'Error nil))
+         (write-region (projectIDE-serialize data) nil file append 'inhibit)
+
+         ;; Serialize all other entries
+         (let ((noError t))
+           (while (car-safe moredata)
+             (if (boundp (car moredata))
+                 (write-region (projectIDE-serialize (car moredata)) nil file t 'inhibit)
+               (when (equal noError t) (setq noError nil))
+               (setq noError (append (list (symbol-name (car moredata))) noError)))
+             (setq moredata (cdr moredata)))
+
+           ;; return value
+           noError)))
+
+(defun projectIDE-parser (file)
+  "FILE."
+  
+  (catch 'Error
+    (let ((noError t))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (while (search-forward "####" nil t)
+          (let (startPoint endPoint name value)
+            (setq startPoint (point))
+            (unless (search-forward "\n" nil t)
+              (message "File '%s' corrupted." file)
+              (throw 'Error nil))
+            (setq endPoint (point))
+            (when (or (search-backward "###" startPoint t) (search-backward " " startPoint t))
+              (message "File '%s' corrupted." file)
+              (throw 'Error nil))
+            (setq name (trim-string (buffer-substring-no-properties startPoint endPoint)))
+            (setq startPoint endPoint)
+            (unless (search-forward "###END###" nil t)
+              (message "File '%s' corrupted." file)
+              (throw 'Error nil))
+            (setq endPoint (point))
+            (save-excursion
+              (backward-char 9)
+              (when (search-backward "###" startPoint t)
+                (message "File '%s' corrupted." file)
+                (throw 'Error nil))
+              (setq value (trim-string (buffer-substring-no-properties startPoint (point)))))
+
+            ;; Check symbol. If exists, import data.
+            (if (boundp (intern name))
+                (set (intern name) (read value))
+              (when (equal noError t) (setq noError nil))
+              (setq noError (cons name noError))))))
+      
+    ;; Return type
+    noError)))
+
+(defun fin>>projectIDE (file &rest morefile)
   "Read file to data.
 
 FILE
@@ -141,19 +231,39 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt
 MOREFILE
 Type:\t\t string
 Descrip.:\t Same as FILE.  Can read multiple files."
-  (catch 'fileError
-    (unless (file-readable-p file)
-      (throw 'fileError "Error reading file!"))
-    (with-temp-buffer
-      (insert-file-contents file)
-      (while (search-forward "####" nil t)
-        (let (startPoint symbol-name)
-          (setq startPoint (point))
-          (unless (search-forward "\n" nil t)
-            (throw 'fileError (format "File %s corrupted." file)))
-          (message (trim-string (buffer-substring startPoint (point))))
-          ))))
-  )
+
+  ;; Read first file
+  (let ((noError t))
+    (catch 'Error
+
+      ;; Check file symbol
+      (unless (stringp file)
+        (message "FILE needs to be in STRING.")
+        (throw 'Error nil))
+
+      ;; Check file accessibility
+      (unless (file-readable-p file)
+        (message "Error reading file!")
+        (throw 'Error nil))
+
+      (setq noError (projectIDE-parser file)))
+
+    (while (car-safe morefile)
+      (let ((file (car morefile)))
+        (if (and (stringp file) (file-readable-p file))
+            (let ((return-value (projectIDE-parser file)))
+              (if return-value
+                  (unless (equal return-value t)
+                    (and (equal noError t)(setq noError nil))
+                    (setq noError (append return-value noError)))
+                (and (equal noError t)(setq noError nil))
+                (setq noError (append (list file) noError))))
+          (and (equal noError t)(setq noError nil))
+          (setq noError (append (list file) noError))))
+      (setq morefile (cdr morefile)))
+    
+    ;; Return value
+    noError))
 
 
 ;; A prototype for the real function
@@ -164,6 +274,8 @@ This macro does nothing but declare a prototype function.
 The prototype function expands itself upon real call.
 So it exists for enchancing startup speed."
   `(defun ,(intern (concat "projectIDE-create-" (downcase (symbol-name projectType)))) ()
+     "! It is a prototype function.
+! Run this function once to declare the real function."
      (interactive)
      (projectIDE-create ,(intern (symbol-name projectType))
                          :templateDir ,(intern (symbol-name templateDir))
@@ -213,10 +325,12 @@ So it exists for enchancing startup speed."
                  (message "Project directory \"%s\" is invalid. Either not exist or non-accessible." dir)) ;; Else of invalid project directory guard
              (message "Project name cannot be empty string."))) ;; Else of Null string guard
 
+      (message "FUck")
       ;; Prevent endless loop if any error in function prototype
-      `(defun ,(intern (concat "projectIDE-create-" (downcase (symbol-name projectType)))) ()
+      `(defun ,(intern (concat "projectIDE-create-" (downcase projectType))) (projectName dir)
+         "Function invalid. Please check setting."
          (interactive)
-         (message "Function invalid."))
+         nil)
       (message "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir))))
 
 (defun projectIDE-initialize ()
@@ -227,17 +341,26 @@ So it exists for enchancing startup speed."
 
 
 ;;;; Testing function
+(defvar projectIDE-test-path
+  (file-name-as-directory
+   (concat
+    (file-name-as-directory
+     (concat default-directory "projectIDE")) "test")))
+(defvar projectIDE-testfile1 (concat projectIDE-test-path "testfile1.txt"))
+(defvar projectIDE-testfile2 (concat projectIDE-test-path "testfile2.txt"))
+(defvar projectIDE-testfile3 (concat projectIDE-test-path "testfile3.txt"))
+(defvar projectIDE-testfile4 (concat projectIDE-test-path "testfile4.txt"))
+(defvar projectIDE-testfile5 (concat projectIDE-test-path "testfile5.txt"))
+;; (defvar projectIDE-testvar1 '("Hello" "world" "I" "am" "Mola"))
+(defvar projectIDE-testvar1 nil)
+;; (defvar projectIDE-testvar2 '(1 '(2 '(3 '(4)))))
+(defvar projectIDE-testvar2 nil)
+(defvar projectIDE-testvar3 nil)
+(defvar projectIDE-testvar4 nil)
+(defvar projectIDE-testvar5 nil)
 ;;; Testing file stream
-(setq testsymbol "I am foo.")
-(setq testfile "~/.emacs.d/elpa/projectIDE/test/mytest.txt")
-;; (serialize 'testfile)
-;; (file<<data nil testfile 'testsymbol)
-;; (data<< testfile)
-;; (with-temp-file testfile (insert "hello"))
-;; (with-temp-file testfile (goto-char (point-max))(insert "world"))
-;; (write-region "hello" nil testfile nil 'excl)
-;; (write-region "world" nil testfile t 'excl)
-;; (insert "abc")
+;; (fout<<projectIDE nil projectIDE-testfile1 'projectIDE-testvar1 'projectIDE-testvar2 'sdkf 'jfaksd 'projectIDE-test-path)
+;; (fin>>projectIDE projectIDE-testfile1 projectIDE-testfile2 projectIDE-testfile3)
 ;;;; End Testing
 
 (provide 'projectIDE)
