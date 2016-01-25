@@ -1,4 +1,3 @@
-
 ;;; projectIDE.el --- project configuration file
 
 ;; Copyright (C) 2015 Mola-T
@@ -46,8 +45,19 @@
   "Setting for creating project."
   :tag "Projection Creation"
   :group 'projectIDE)
+(defgroup projectIDE-hook nil
+  "All available projectIDE hooks."
+  :tag "Hook"
+  :group 'projectIDE)
 
 ;;; Variables
+(defconst PROJECTIDE-PROJECTROOT ".projectIDE"
+  "The root file indicator.")
+
+(defvar projectIDE-project-database nil
+  "Database recording all project.
+Never attempt to modify it directly.")
+
 (defcustom projectIDE-create-defaultDir (getenv "HOME")
   "Global default project directory.
 When creating project, if no specific directory or
@@ -57,12 +67,22 @@ variable as the default directory."
   :type 'directory
   :group 'projectIDE-project-creation)
 
+(defcustom projectIDE-create-hook nil
+  "Hook runs when creating project."
+  :tag "projectIDE-create-hook"
+  :type 'hook
+  :group 'projectIDE-project-creation
+  :group 'projectIDE-hook)
+
 (defcustom projectIDE-database-path
-  (concat (file-name-as-directory user-emacs-directory) "prjectIDE")
+  (concat (file-name-as-directory user-emacs-directory) "projectIDE")
   "Type: string\nPath for storing projectIDE database."
   :tag "Main database path"
   :type 'directory
   :group 'projectIDE-global)
+
+(defvar projectIDE-project-database-filename "PROJECTS"
+  "Type: string\nFilename for project record.")
 
 (defcustom projectIDE-create-require-confirm t
   "Require confirmation when creating project?
@@ -87,7 +107,7 @@ Descrip.:\t String to be trimmed."
                             ""
                             str))
 
-(defun projectIDE-serialize (data)
+(defun projectIDE-dataSerializer (data)
   "This is a projectIDE internal function.
 Return a single string of serialized DATA.
 The string begins with a start flag \\n#### and the symbol name.
@@ -96,7 +116,7 @@ The real data is in the middle.
 
 Example:
 \t\(setq foo '\(\"Hello\" \"World\"\)\)
-\t\(projectIDE-serialize 'foo\)
+\t\(projectIDE-dataSerializer 'foo\)
 \t=>\t\"
 \t\t####foo
 \t\t\(\"Hello\" \"World\"\)
@@ -140,7 +160,7 @@ Example:
   \(message \"Some problem.\"\)\)
 
 Return
-Type:\t\t list or bool
+Type:\t\t bool or list
 Descrip.:\t t for no error.
 \t\t\t nil for error at writing first data to file
 \t\t\t a list for ignored error in more data
@@ -163,10 +183,6 @@ Type:\t\t symbol
 Descrip.:\t Same as DATA.  Can serialize multiple symbols.
 \t\t\t MOREDATA will append to FILE no matter what APPEND is."
        (catch 'Error
-         ;; CHeck file symbol
-         (unless (stringp file)
-           (message "FILE needs to be in STRING.")
-           (throw 'Error nil))
 
          ;; Check file accessibility
          (unless (and (file-exists-p file) (file-writable-p file))
@@ -183,13 +199,13 @@ Descrip.:\t Same as DATA.  Can serialize multiple symbols.
          (unless (boundp data)
            (message "Symbol '%s' is not defined." (symbol-name data))
            (throw 'Error nil))
-         (write-region (projectIDE-serialize data) nil file append 'inhibit)
+         (write-region (projectIDE-dataSerializer data) nil file append 'inhibit)
 
          ;; Serialize all other entries
          (let ((noError t))
            (while (car-safe moredata)
              (if (boundp (car moredata))
-                 (write-region (projectIDE-serialize (car moredata)) nil file t 'inhibit)
+                 (write-region (projectIDE-dataSerializer (car moredata)) nil file t 'inhibit)
                (when (equal noError t) (setq noError nil))
                (setq noError (append (list (symbol-name (car moredata))) noError)))
              (setq moredata (cdr moredata)))
@@ -197,10 +213,31 @@ Descrip.:\t Same as DATA.  Can serialize multiple symbols.
            ;; return value
            noError)))
 
-(defun projectIDE-parser (file)
+(defun projectIDE-dataParser (file)
   "This is a projectIDE internal function.
-This.
-"
+It parse FILE which consist projectIDE data
+produced by projectIDE-dataSerializer.
+The file may have mulitple symbols and corresponding value.
+If symbol has already been defined in Emacs,
+projectIDE-dataParser will restore it.
+If symbol has not yet defined in Emacs,
+projectIDE-dataParser will ignore it.
+If there is any format error of the FILE,
+projectIDE-dataParser will parse up to the error point
+and terminate the parsing process.
+projectIDE-dataParser returns t if it can parse the whole file.
+It returns nil if there is format error.
+Or it returns a list for ignored symbol.
+
+Return
+Type:\t\t list or bool
+Descrip.:\t t for no error.
+\t\t\t nil for failing to load data from first FILE
+\t\t\t a list for ignored symbols or files
+
+FILE
+Type:\t\t string
+Descrip.: file path"
   
   (catch 'Error
     (let ((noError t))
@@ -239,7 +276,19 @@ This.
     noError)))
 
 (defun fin>>projectIDE (file &rest morefile)
-  "Read file to data.
+  "This function is safe.
+It reads data from FILE and call projectIDE-dataParser
+to restore the data.
+It accepts more than one files by MOREFILE.
+It returns t it there isn't any error,
+returns nil if the first FILE cannot load successfully,
+and returns a list for any ignored files/symbols.
+
+Return
+Type:\t\t bool or list
+Descrip.:\t t for no error.
+\t\t\t nil for file format error
+\t\t\t a list for ignored symbols
 
 FILE
 Type:\t\t string
@@ -254,22 +303,20 @@ Descrip.:\t Same as FILE.  Can read multiple files."
   (let ((noError t))
     (catch 'Error
 
-      ;; Check file symbol
-      (unless (stringp file)
-        (message "FILE needs to be in STRING.")
-        (throw 'Error nil))
-
       ;; Check file accessibility
       (unless (file-readable-p file)
         (message "Error reading file!")
         (throw 'Error nil))
 
-      (setq noError (projectIDE-parser file)))
+      (setq noError (projectIDE-dataParser file)))
+
+    (unless noError
+      (throw 'Error nil))
 
     (while (car-safe morefile)
       (let ((file (car morefile)))
-        (if (and (stringp file) (file-readable-p file))
-            (let ((return-value (projectIDE-parser file)))
+        (if (file-readable-p file)
+            (let ((return-value (projectIDE-dataParser file)))
               (if return-value
                   (unless (equal return-value t)
                     (and (equal noError t)(setq noError nil))
@@ -284,85 +331,111 @@ Descrip.:\t Same as FILE.  Can read multiple files."
     noError))
 
 
-;; A prototype for the real function
-;; Provide on-demand creation of the real marco
-(cl-defmacro projectIDE-create-prototype (projectType &key templateDir defaultDir document)
-  "Prototype of macro 'projectIDE-create'.
-This macro does nothing but declare a prototype function.
-The prototype function expands itself upon real call.
-So it exists for enchancing startup speed."
-    `(defun ,(intern (concat "projectIDE-create-" (downcase (symbol-name projectType)))) ()
-     "! It is a prototype function.
-! Run this function once to declare the real function."
-     (interactive)
-     (projectIDE-create ,projectType
-                         :templateDir ,(intern (symbol-name templateDir))
-                         :defaultDir ,(intern (symbol-name defaultDir))
-                         :document ,(intern (symbol-name document)))
-     (message "This is Prototype Prototype Prototype Prototype Prototype Prototype Prototype")
-     (call-interactively (quote ,(intern (concat "projectIDE-create-" (symbol-name projectType)))))))
-
-;; Real create project marco
 (cl-defmacro projectIDE-create (projectType &key templateDir defaultDir document)
   "Create projection creation function."
   (let* ((projectType (symbol-name projectType))
-         (templateDir (file-name-as-directory (symbol-name templateDir)))
-         (defaultDir (file-name-as-directory (symbol-name defaultDir)))
+         (templateDir (file-name-as-directory templateDir))
+         (defaultDir (file-name-as-directory defaultDir))
          (document (or document (format
-                                 "Create new %s project.\nProjectIDE will create new folder under 'dir'\nwith folder name 'projectname'"
+                                 "Create new '%s' project.\nProjectIDE will create a new folder named PROJECTNAME under DIR"
                                  projectType))))
     
     ;; Check if the template directory and default directory exist
     (if (and (file-directory-p templateDir)
              (or (file-directory-p defaultDir)
                  (setq defaultDir (or projectIDE-create-defaultDir user-emacs-directory))))
-
-        (progn
-          (message "REAL FUNCTION INVOKED FUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCK")
-          ;; Function template
-          `(defun ,(intern (concat "projectIDE-create-" (downcase projectType))) (projectName dir)
-
-             ;; Documentation
-             ,document
-
-             ;; Interactive call
-             (interactive (list (read-string "Project Name: ")
-                                (read-directory-name "Create project at: " ,defaultDir)))
-             (setq dir (file-name-as-directory dir))
-
-             (if (not (string= projectName "")) ;; Null string guard
-                 (if (file-accessible-directory-p dir) ;; Invalid project directory guard
-                     (let ((projectRoot (concat dir projectName)))
-                       (if (or (not projectIDE-create-require-confirm)
-                               (y-or-n-p (format "Project\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
-                                                 projectName ,templateDir projectRoot)))
-                           ;; Create project
-                           (progn
-                             (mkdir projectRoot)
-                             (copy-directory ,templateDir projectRoot nil nil t)
-                             (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
-                                      projectName ,templateDir projectRoot))
-                         (message "Projection creation canceled.")))
-                   (message "Project directory \"%s\" is invalid. Either not exist or non-accessible." dir)) ;; Else of invalid project directory guard
-               (message "Project name cannot be empty string.")))) ;; Else of Null string guard
-
-      ;; Eles of Check if the template directory and default directory exist
-      (progn
-        (message "REAL FUNCTION INVOKED FUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCK")
-        ;; Prevent endless loop if any error in function prototype
         
+        ;; Function template
         `(defun ,(intern (concat "projectIDE-create-" (downcase projectType))) (projectName dir)
-           "Function invalid. Please check setting."
-           (interactive)
-           nil)
-        (message "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir)))))
 
+           ;; Documentation
+           ,document
+
+           ;; Interactive call to ask for project name and project directory
+           (interactive (list (read-string "Project Name: ")
+                              (read-directory-name "Create project at: " ,defaultDir)))
+           (setq dir (file-name-as-directory dir))
+
+           (if (not (string= projectName "")) ;; Null string guard
+               (if (file-accessible-directory-p dir) ;; Invalid project directory guard
+                   (let ((projectRoot (concat dir projectName)))
+                     (if (or (not projectIDE-create-require-confirm)
+                             (y-or-n-p (format "Project\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
+                                               projectName ,templateDir projectRoot)))
+                         ;; Create project
+                         (progn
+                           (make-directory projectRoot)
+                           (copy-directory ,templateDir projectRoot nil nil t)
+                           (projectIDE-project-root-creator projectRoot)
+                           (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
+                                    projectName ,templateDir projectRoot)
+                           (run-hooks 'projectIDE-create-hook))
+                       (message "Projection creation canceled.")))
+                 (message "Project directory \"%s\" is invalid. Either not exist or non-accessible." dir)) ;; Else of invalid project directory guard
+             (message "Project name cannot be empty string."))) ;; Else of Null string guard
+      
+      (message "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir))))
+
+
+(defun projectIDE-project-root-creator (path)
+  "Create '.PROJECTIDE' at PATHto indicate a project root.
+Generate project signature if required.
+
+PATH
+Type:\t\t string
+Descrip.:\t Path to project root."
+    (unless (memq PROJECTIDE-PROJECTROOT (directory-files (file-name-as-directory path)))
+      (write-region " " nil (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT) t 'inhibit))
+
+    (projectIDE-project-signature-generator (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT)))
+
+(defun projectIDE-project-signature-generator (file)
+  "Generate signature for FILE."
+
+  (let (signature name day startPoint endPoint)
+    (with-temp-file file
+      (insert-file-contents file)
+      (goto-char 1)
+      (if (search-forward-regexp "^signature:" nil t)
+          (progn
+            (setq startPoint (point))
+            (search-forward "\n" nil t)
+            (setq endPoint (point))
+            (setq signature (trim-string (buffer-substring-no-properties startPoint endPoint)))
+            (goto-char 1)
+            (if (search-forward-regexp "^name:" nil t)
+                
+                (message "Good find everthing.")
+              (message "Find signature but not name.")))
+        ;; Cannot find signature
+        (setq signature
+              (concat (number-to-string (random most-positive-fixnum))
+                      (number-to-string (random most-positive-fixnum))))
+        (insert "##Never create or change the signature manually!\n"
+                "signature:" signature "\n")
+        (if (search-forward-regexp "name:" nil t)
+            (message "Generated signature but name can find.")
+          (progn
+            (setq name (file-name-nondirectory (directory-file-name (file-name-directory file))))
+            (goto-char 1)
+            (insert "name:" name "\n")
+            (setq day (time-to-days (current-time)))
+            (add-to-list 'projectIDE-project-database (list signature name day)))))))
+
+    )
+
+
+         
+  
 
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
   (interactive)
-  (message "Directory directory: %s" (concat (file-name-as-directory projectIDE-database-path) "cache"))
-  )
+  (fin>>projectIDE
+   ;; Project record
+   (concat (file-name-as-directory projectIDE-database-path)
+           projectIDE-project-database-filename)
+   ))
 
 
 ;;;; Testing function
@@ -383,6 +456,7 @@ So it exists for enchancing startup speed."
 (defvar projectIDE-testvar3 nil)
 (defvar projectIDE-testvar4 nil)
 (defvar projectIDE-testvar5 nil)
+;; (time-to-days (current-time))
 ;;; Testing file stream
 ;; (fout<<projectIDE nil projectIDE-testfile1 'projectIDE-testvar1 'projectIDE-testvar2 'sdkf 'jfaksd 'projectIDE-test-path)
 ;; (fin>>projectIDE projectIDE-testfile1 projectIDE-testfile2 projectIDE-testfile3)
