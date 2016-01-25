@@ -1,3 +1,4 @@
+
 ;;; projectIDE.el --- project configuration file
 
 ;; Copyright (C) 2015 Mola-T
@@ -74,6 +75,10 @@ Other values skip the confirmation."
 (defun trim-string (str)
   "Return trimmed leading and tailing whitespace from STR.
 
+Return
+Type:\t\t string
+Descrip.:\t Trimmed string.
+
 STR
 Type:\t\t string
 Descrip.:\t String to be trimmed."
@@ -83,7 +88,8 @@ Descrip.:\t String to be trimmed."
                             str))
 
 (defun projectIDE-serialize (data)
-  "Return a single string of serialized DATA.
+  "This is a projectIDE internal function.
+Return a single string of serialized DATA.
 The string begins with a start flag \\n#### and the symbol name.
 The string ends with an end flag \\n##END###.
 The real data is in the middle.
@@ -95,6 +101,10 @@ Example:
 \t\t####foo
 \t\t\(\"Hello\" \"World\"\)
 \t\t###END###\"
+
+Return
+Type:\t\t string
+Descrip.:\t Single serialized string.
 
 DATA
 Type:\t\t symbol
@@ -128,6 +138,12 @@ Example:
 \(if \(file<<data nil \"~\\Documents\\foo.txt\" 'foo 'bar 'hello 'world\)
     \(message \"All success.\"\)
   \(message \"Some problem.\"\)\)
+
+Return
+Type:\t\t list or bool
+Descrip.:\t t for no error.
+\t\t\t nil for error at writing first data to file
+\t\t\t a list for ignored error in more data
 
 APPEND
 Type:\t\t bool
@@ -182,7 +198,9 @@ Descrip.:\t Same as DATA.  Can serialize multiple symbols.
            noError)))
 
 (defun projectIDE-parser (file)
-  "FILE."
+  "This is a projectIDE internal function.
+This.
+"
   
   (catch 'Error
     (let ((noError t))
@@ -273,14 +291,15 @@ Descrip.:\t Same as FILE.  Can read multiple files."
 This macro does nothing but declare a prototype function.
 The prototype function expands itself upon real call.
 So it exists for enchancing startup speed."
-  `(defun ,(intern (concat "projectIDE-create-" (downcase (symbol-name projectType)))) ()
+    `(defun ,(intern (concat "projectIDE-create-" (downcase (symbol-name projectType)))) ()
      "! It is a prototype function.
 ! Run this function once to declare the real function."
      (interactive)
-     (projectIDE-create ,(intern (symbol-name projectType))
+     (projectIDE-create ,projectType
                          :templateDir ,(intern (symbol-name templateDir))
                          :defaultDir ,(intern (symbol-name defaultDir))
                          :document ,(intern (symbol-name document)))
+     (message "This is Prototype Prototype Prototype Prototype Prototype Prototype Prototype")
      (call-interactively (quote ,(intern (concat "projectIDE-create-" (symbol-name projectType)))))))
 
 ;; Real create project marco
@@ -298,43 +317,49 @@ So it exists for enchancing startup speed."
              (or (file-directory-p defaultDir)
                  (setq defaultDir (or projectIDE-create-defaultDir user-emacs-directory))))
 
-        ;; Function template
+        (progn
+          (message "REAL FUNCTION INVOKED FUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCK")
+          ;; Function template
+          `(defun ,(intern (concat "projectIDE-create-" (downcase projectType))) (projectName dir)
+
+             ;; Documentation
+             ,document
+
+             ;; Interactive call
+             (interactive (list (read-string "Project Name: ")
+                                (read-directory-name "Create project at: " ,defaultDir)))
+             (setq dir (file-name-as-directory dir))
+
+             (if (not (string= projectName "")) ;; Null string guard
+                 (if (file-accessible-directory-p dir) ;; Invalid project directory guard
+                     (let ((projectRoot (concat dir projectName)))
+                       (if (or (not projectIDE-create-require-confirm)
+                               (y-or-n-p (format "Project\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
+                                                 projectName ,templateDir projectRoot)))
+                           ;; Create project
+                           (progn
+                             (mkdir projectRoot)
+                             (copy-directory ,templateDir projectRoot nil nil t)
+                             (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
+                                      projectName ,templateDir projectRoot))
+                         (message "Projection creation canceled.")))
+                   (message "Project directory \"%s\" is invalid. Either not exist or non-accessible." dir)) ;; Else of invalid project directory guard
+               (message "Project name cannot be empty string.")))) ;; Else of Null string guard
+
+      ;; Eles of Check if the template directory and default directory exist
+      (progn
+        (message "REAL FUNCTION INVOKED FUCKFUCKFUCKFUCKFUCKFUCKFUCKFUCK")
+        ;; Prevent endless loop if any error in function prototype
+        
         `(defun ,(intern (concat "projectIDE-create-" (downcase projectType))) (projectName dir)
+           "Function invalid. Please check setting."
+           (interactive)
+           nil)
+        (message "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir)))))
 
-           ;; Documentation
-           ,document
-
-           ;; Interactive call
-           (interactive (list (read-string "Project Name: ")
-                              (read-directory-name "Create project at: " ,defaultDir)))
-           (setq dir (file-name-as-directory dir))
-
-           (if (not (string= projectName "")) ;; Null string guard
-               (if (file-accessible-directory-p dir) ;; Invalid project directory guard
-                   (let ((projectRoot (concat dir projectName)))
-                     (if (or (not projectIDE-create-require-confirm)
-                             (y-or-n-p (format "Project\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
-                                               projectName ,templateDir projectRoot)))
-                         ;; Create project
-                         (progn
-                           (mkdir projectRoot)
-                           (copy-directory ,templateDir projectRoot nil nil t)
-                           (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
-                                    projectName ,templateDir projectRoot))
-                       (message "Projection creation canceled.")))
-                 (message "Project directory \"%s\" is invalid. Either not exist or non-accessible." dir)) ;; Else of invalid project directory guard
-             (message "Project name cannot be empty string."))) ;; Else of Null string guard
-
-      (message "FUck")
-      ;; Prevent endless loop if any error in function prototype
-      `(defun ,(intern (concat "projectIDE-create-" (downcase projectType))) (projectName dir)
-         "Function invalid. Please check setting."
-         (interactive)
-         nil)
-      (message "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir))))
 
 (defun projectIDE-initialize ()
-  "Document."
+  "ProjectIDE-initialize."
   (interactive)
   (message "Directory directory: %s" (concat (file-name-as-directory projectIDE-database-path) "cache"))
   )
@@ -352,7 +377,7 @@ So it exists for enchancing startup speed."
 (defvar projectIDE-testfile4 (concat projectIDE-test-path "testfile4.txt"))
 (defvar projectIDE-testfile5 (concat projectIDE-test-path "testfile5.txt"))
 ;; (defvar projectIDE-testvar1 '("Hello" "world" "I" "am" "Mola"))
-(defvar projectIDE-testvar1 nil)
+ (defvar projectIDE-testvar1 nil)
 ;; (defvar projectIDE-testvar2 '(1 '(2 '(3 '(4)))))
 (defvar projectIDE-testvar2 nil)
 (defvar projectIDE-testvar3 nil)
