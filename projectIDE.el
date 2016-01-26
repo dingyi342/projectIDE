@@ -26,7 +26,6 @@
 ;; Boston, MA 02110-1301, USA.
 
 ;;; Commentary:
-;; HelloWorld
 
 ;;; code:
 (require 'cl-lib)
@@ -43,7 +42,11 @@
   :group 'projectIDE)
 (defgroup projectIDE-project-creation nil
   "Setting for creating project."
-  :tag "Projection Creation"
+  :tag "Projection creation"
+  :group 'projectIDE)
+(defgroup projectIDE-config-file nil
+  "Setting for loading individual project config file."
+  :tag "Config file settings"
   :group 'projectIDE)
 (defgroup projectIDE-hook nil
   "All available projectIDE hooks."
@@ -51,13 +54,30 @@
   :group 'projectIDE)
 
 ;;; Variables
-(defconst PROJECTIDE-PROJECTROOT ".projectIDE"
+;; Global Effective Variable
+(defconst PROJECTIDE-PROJECTROOT-IDENTIFIER ".projectIDE"
   "The root file indicator.")
 
-(defvar projectIDE-project-database nil
+(defcustom projectIDE-global-record-path
+  (concat (file-name-as-directory user-emacs-directory) "projectIDE")
+  "Type: string\nPath for storing projectIDE database."
+  :tag "Main database path"
+  :type 'directory
+  :group 'projectIDE-global)
+
+(defconst projectIDE-global-project-record-filename "REDORD"
+  "Type: string\nFilename for project record.")
+
+(defconst projectIDE-individual-project-record-path
+  (concat (file-name-as-directory projectIDE-global-record-path) "INDIVIDUAL")
+  "Type: string\nFolder path to individual project record.")
+
+;; Runtime Variable
+(defvar projectIDE-global-project-record nil
   "Database recording all project.
 Never attempt to modify it directly.")
 
+;; Project Creation Variable
 (defcustom projectIDE-create-defaultDir (getenv "HOME")
   "Global default project directory.
 When creating project, if no specific directory or
@@ -74,38 +94,146 @@ variable as the default directory."
   :group 'projectIDE-project-creation
   :group 'projectIDE-hook)
 
-(defcustom projectIDE-database-path
-  (concat (file-name-as-directory user-emacs-directory) "projectIDE")
-  "Type: string\nPath for storing projectIDE database."
-  :tag "Main database path"
-  :type 'directory
-  :group 'projectIDE-global)
-
-(defvar projectIDE-project-database-filename "PROJECTS"
-  "Type: string\nFilename for project record.")
-
 (defcustom projectIDE-create-require-confirm t
   "Require confirmation when creating project?
-If this value is t, projectIDE will ask for confirmationbefore creating project.
-Other values skip the confirmation."
+If this value is nil, projectIDE will skip confirmation
+before creating project.
+Other values ask for the confirmation."
   :tag "Require confirmation when creating project?"
   :type 'boolean
   :group 'projectIDE-project-creation)
 
-(defun trim-string (str)
-  "Return trimmed leading and tailing whitespace from STR.
+;; Project config file variable
+(defconst projectIDE-default-config-key
+  '("^signature="
+    "^name="
+    "^include="
+    "^exclude="
+    "^inject=")
+  "Default projectIDE config file keyword.
+Must not change.")
+
+
+(defcustom projectIDE-config-file-search-up-level 4
+  "Number of upper level directories to search for the .projectIDE file."
+  :tag "Config file search up level"
+  :type 'integer
+  :group 'projectIDE-config-file)
+
+;; Implement later
+(cl-defstruct injector
+  file
+  replace ;;(####ABCED#### . ####ABCDEEND####)
+  source ;; ####FILE#####*.cpp####FILEEND####
+  )
+
+(cl-defstruct project
+  ;; public
+  ;; config file
+  signature ;; string         eg. "173874102"
+  name      ;; string         eg. "HelloWorld"
+  include   ;; string-list    eg. ("src/*.cpp" "inc/*.h")
+  exclude   ;; string-list    eg. ("*.git" ".projectIDE")
+  injector  ;; injector-list
+
+  ;; create
+  hook      ;; symbol-list    eg. ('fun1 'fun2 'fun3)
+
+  ;; private
+  ;; 
+  create    ;; integer        eg. 1234
+  ;; 
+  file-list)
+
+(defun projectIDE-configParser (file)
+  "Parse .projectIDE config FILE.
+Return a 'project' object created by the FILE.
 
 Return
-Type:\t\t string
-Descrip.:\t Trimmed string.
+Type:\t\t project object
+Descrip.:\t Project object created by parsing FILE.
 
-STR
+FILE
+Type:\t\t string
+Descrip.:\t Flie path to .projectIDE."
+  (catch 'parse-error
+    (let (key (project (make-project)))
+
+      ;; Combine the projectIDE-default-config-key
+      (dolist (val projectIDE-default-config-key)
+        (if key
+            (setq key (concat val "\\|"key))
+          (setq key val)))
+      
+      (with-temp-buffer
+        (insert-file-contents file)
+        (message "[ProjectIDE] Config file contains: %s" (buffer-string))
+        (while (search-forward-regexp key nil t)
+          (message "[ProjectIDE] Found something")
+          (save-excursion
+            (beginning-of-line)
+            (let ((notFound t)
+                  (end (line-end-position))
+                  (keylist projectIDE-default-config-key)
+                  (counter 0))
+              (while (and notFound (car-safe keylist))
+                (if (search-forward-regexp (car keylist) end t)
+                    (progn
+                      (cond
+                       ((= counter 0) ;; "^signature="
+                        (when (project-signature project)
+                          (message "[ProjectIDE] Error: Config file corrupt. 'signature' defined more than once.")
+                          (throw 'parse-error nil))
+                        (setf (project-signature project) (trim-string (buffer-substring-no-properties (point) end))))
+                       ((= counter 1) ;; "^name="
+                        (when (project-name project)
+                          (message "[ProjectIDE] Error: Config file corrupt. 'name' defined more than once.")
+                          (throw 'parse-error nil))
+                        (setf (project-name project) (trim-string (buffer-substring-no-properties (point) end))))
+                       ((= counter 2) ;; "^include="
+                        (let ((include-list (project-include project))
+                              (value (trim-string (buffer-substring-no-properties (point) end))))
+                          (when value
+                            (add-to-list 'include-list value)
+                            (setf (project-include project) include-list))))
+                       ((= counter 3) ;; "^exclude="
+                        (let ((exclude-list (project-exclude project))
+                              (value (trim-string (buffer-substring-no-properties (point) end))))
+                          (when value
+                            (add-to-list 'exclude-list value)
+                            (setf (project-exclude project) exclude-list))))
+                       ((= counter 4) ;; "^inject"
+                        ;; Implement later
+                        (message "[ProjectIDE] Inject eature not availiable for this version.")))
+                      (setq notFound nil)))
+                (setq counter (1+ counter))
+                (setq keylist (cdr keylist)))
+              ))))
+      
+      ;; Return value
+      project)))
+
+
+(defun trim-string (string)
+  "Return trimmed leading and tailing whitespace from STRING.
+If the return string is a null string, return nil instead.
+
+Return
+Type:\t\t string or nil
+Descrip.:\t Trimmed string or nil if blank string.
+
+STRING
 Type:\t\t string
 Descrip.:\t String to be trimmed."
-  (replace-regexp-in-string (rx (or (: bos (* (any " \t\n")))
-                                    (: (* (any " \t\n")) eos)))
-                            ""
-                            str))
+  (let ((return-string
+         (replace-regexp-in-string (rx (or (: bos (* (any " \t\n")))
+                                           (: (* (any " \t\n")) eos)))
+                                   ""
+                                   string)))
+    ;; Return type
+    (if (string= return-string "")
+        nil
+      return-string)))
 
 (defun projectIDE-dataSerializer (data)
   "This is a projectIDE internal function.
@@ -367,9 +495,9 @@ Descrip.:\t Same as FILE.  Can read multiple files."
                            (make-directory projectRoot)
                            (copy-directory ,templateDir projectRoot nil nil t)
                            (projectIDE-project-root-creator projectRoot)
+                           (run-hooks 'projectIDE-create-hook)
                            (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
-                                    projectName ,templateDir projectRoot)
-                           (run-hooks 'projectIDE-create-hook))
+                                    projectName ,templateDir projectRoot))
                        (message "Projection creation canceled.")))
                  (message "Project directory \"%s\" is invalid. Either not exist or non-accessible." dir)) ;; Else of invalid project directory guard
              (message "Project name cannot be empty string."))) ;; Else of Null string guard
@@ -378,39 +506,29 @@ Descrip.:\t Same as FILE.  Can read multiple files."
 
 
 (defun projectIDE-project-root-creator (path)
-  "Create '.PROJECTIDE' at PATHto indicate a project root.
+  "Create '.projectIDE' at PATH to indicate a project root.
 Generate project signature if required.
 
 PATH
 Type:\t\t string
 Descrip.:\t Path to project root."
-    (unless (memq PROJECTIDE-PROJECTROOT (directory-files (file-name-as-directory path)))
-      (write-region " " nil (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT) t 'inhibit))
+    (unless (memq PROJECTIDE-PROJECTROOT-IDENTIFIER (directory-files (file-name-as-directory path)))
+      (write-region "" nil (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT-IDENTIFIER) t 'inhibit))
 
-    (projectIDE-project-signature-generator (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT)))
-
-(defun projectIDE-project-signature-generator (file)
-  "Generate signature for FILE."
-
-  (let (signature name day startPoint endPoint)
-    (with-temp-file file
-      (insert-file-contents file)
-      (goto-char 1)
-      (if (search-forward-regexp "^signature:" nil t)
-          (progn
-            (setq startPoint (point))
-            (search-forward "\n" nil t)
-            (setq endPoint (point))
-            (setq signature (trim-string (buffer-substring-no-properties startPoint endPoint)))
-            (goto-char 1)
-            (if (search-forward-regexp "^name:" nil t)
-                
-                (message "Good find everthing.")
-              (message "Find signature but not name.")))
-        ;; Cannot find signature
-        (setq signature
-              (concat (number-to-string (random most-positive-fixnum))
-                      (number-to-string (random most-positive-fixnum))))
+    (let* ((file (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT-IDENTIFIER))
+           (project (projectIDE-configParser file))
+           (signature (concat (number-to-string (random most-positive-fixnum))
+                              (number-to-string (random most-positive-fixnum))))
+           (name )
+          ;; Cannot find signature
+      (with-temp-file file
+        (when (project-signature project)
+          (while (search-forward-regexp "^signature=" nil t)
+            (delete-region (line-beginning-position) (line-end-position))))
+        (let ()
+              name
+              creation
+              path)
         (insert "##Never create or change the signature manually!\n"
                 "signature:" signature "\n")
         (if (search-forward-regexp "name:" nil t)
@@ -420,23 +538,18 @@ Descrip.:\t Path to project root."
             (goto-char 1)
             (insert "name:" name "\n")
             (setq day (time-to-days (current-time)))
-            (add-to-list 'projectIDE-project-database (list signature name day)))))))
-
-    )
-
-
-         
-  
-
+            (add-to-list 'projectIDE-global-project-record (list signature name day)))))))
+    
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
   (interactive)
-  (fin>>projectIDE
-   ;; Project record
-   (concat (file-name-as-directory projectIDE-database-path)
-           projectIDE-project-database-filename)
-   ))
-
+  (let* ((file (concat (file-name-as-directory projectIDE-global-record-path)
+                       projectIDE-global-project-record-filename)))
+    (unless (file-exists-p projectIDE-individual-project-record-path)
+      (make-directory projectIDE-individual-project-record-path))
+    (unless (file-exists-p file)
+      (write-region "" nil file t 'inhibit))
+    (fin>>projectIDE file)))
 
 ;;;; Testing function
 (defvar projectIDE-test-path
@@ -461,6 +574,6 @@ Descrip.:\t Path to project root."
 ;; (fout<<projectIDE nil projectIDE-testfile1 'projectIDE-testvar1 'projectIDE-testvar2 'sdkf 'jfaksd 'projectIDE-test-path)
 ;; (fin>>projectIDE projectIDE-testfile1 projectIDE-testfile2 projectIDE-testfile3)
 ;;;; End Testing
-
+(projectIDE-initialize)
 (provide 'projectIDE)
 ;;; projectIDE.el ends here
