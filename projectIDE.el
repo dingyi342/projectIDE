@@ -82,6 +82,12 @@
   "Database recording all project.
 Never attempt to modify it directly.")
 
+(defvar projectIDE-current-opened-project nil
+  "Current opened project.
+Never attempt to modify it directly.
+
+Type: project list")
+
 ;; Project Creation Variable
 (defcustom projectIDE-create-defaultDir (getenv "HOME")
   "Global default project directory.
@@ -118,6 +124,26 @@ Other values ask for the confirmation."
   "Default projectIDE config file keyword.
 Must not change.")
 
+(defcustom projectIDE-default-exclude
+  '("*.idea*"
+    "*.eunit*"
+    "*.git*"
+    "*.hg*"
+    "*.fslckout*"
+    "*.bzr*"
+    "*_darcs*"
+    "*.tox*"
+    "*.svn*"
+    "*.stack-work*")
+  "A list of exclude items by projectIDE."
+  :group 'projecIDE-config-file
+  :type '(repeat string))
+
+(defcustom projectIDE-default-include
+  '("*")
+  "A list of include items by projectIDE."
+  :group 'projecIDE-config-file
+  :type '(repeat string))
 
 (defcustom projectIDE-config-file-search-up-level 4
   "Number of upper level directories to search for the .projectIDE file."
@@ -137,8 +163,8 @@ Must not change.")
   ;; config file
   signature           ;; string         eg. "173874102"
   name                ;; string         eg. "HelloWorld"
-  (include '("*"))             ;; string-list    eg. ("src/*.cpp" "inc/*.h")
-  exclude             ;; string-list    eg. ("*.git" ".projectIDE")
+  (include projectIDE-default-include)    ;; string-list    eg. ("src/*.cpp" "inc/*.h")
+  (exclude projectIDE-default-exclude)    ;; string-list    eg. ("*.git" ".projectIDE")
   project-open-hook   ;; symbol
   file-open-hook      ;; symbol
   compile-hook        ;; symbol
@@ -148,8 +174,8 @@ Must not change.")
   file-create-hook    ;; symbol-list    eg. ('fun1 'fun2 'fun3)
 
   ;; private
-  include-files       ;; string-list
-  exclude-files
+  last-file-list-update ;; string-list
+  inc-exc-changed
   file-list)
 
 (cl-defstruct record
@@ -206,15 +232,17 @@ Descrip.:\t Flie path to .projectIDE."
                         (setf (project-name project) (trim-string (buffer-substring-no-properties (point) end))))
                        ((= counter 2) ;; "^include="
                         (let ((include-list (project-include project))
-                              (value (trim-string (buffer-substring-no-properties (point) end))))
+                              (value (split-string (buffer-substring-no-properties (point) end))))
                           (when value
-                            (add-to-list 'include-list value)
+                            (setq include-list (append include-list value))
+                            (setq include-list (cl-remove-duplicates include-list :test 'string=))
                             (setf (project-include project) include-list))))
                        ((= counter 3) ;; "^exclude="
                         (let ((exclude-list (project-exclude project))
-                              (value (trim-string (buffer-substring-no-properties (point) end))))
+                              (value (split-string (buffer-substring-no-properties (point) end))))
                           (when value
-                            (add-to-list 'exclude-list value)
+                            (setq exclude-list (append exclude-list value))
+                            (setq exclude-list (cl-remove-duplicates exclude-list :test 'string=))
                             (setf (project-exclude project) exclude-list))))
                        ((= counter 4) ;; "^inject"
                         ;; Implement later
@@ -298,16 +326,14 @@ Descrip.:\t Serialize data holds by symbol."
 
            ;; Serialize and wirte data to file
            (with-temp-file file
-             (insert "######" (symbol-name data) "\n")
-             (insert (prin1-to-string (symbol-value data)))
-             (insert "####END####"))
+             (insert (prin1-to-string (symbol-value data))))
            
            ;; return value
            noError)))
 
-(defun fin>>projectIDE (file)
+(defun fin>>projectIDE (file symbol)
   "This function is safe.
-It parse data from FILE and call to restore the data.
+It read data from FILE and restore data to SYMBOL.
 
 It returns t it there isn't any error
 It returns nil if data cannot be restored.
@@ -322,38 +348,17 @@ Descrip.:\t Path to input file.
 Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
   
   (catch 'Error
-
     ;; Check file accessibility
     (unless (file-readable-p file)
       (throw 'Error nil))
 
-    ;; Parse file
+    ;; Read from file
     (with-temp-buffer
       (insert-file-contents file)
       (unless (equal (point-min) (point-max))
-        (let (startPoint endPoint name value)
-          (unless (search-forward "######" nil t)
-            (throw 'Error nil))
-          (setq startPoint (point))
-          (unless (search-forward "\n" nil t)
-            (throw 'Error nil))
-          (setq endPoint (point))
-          (when (or (search-backward "####" startPoint t) (search-backward " " startPoint t))
-            (throw 'Error nil))
-          (setq name (trim-string (buffer-substring-no-properties startPoint endPoint)))
-          (setq startPoint endPoint)
-          (unless (search-forward "####END####" nil t)
-            (throw 'Error nil))
-          (setq endPoint (point))
-          (backward-char 9)
-          (when (search-backward "####" startPoint t)
-            (throw 'Error nil))
-          (setq value (buffer-substring-no-properties startPoint (point)))
-        
-          ;; Check symbol. If exists, import data.
-          (if (boundp (intern name))
-              (set (intern name) (read value))
-            (throw 'Error nil)))))
+        (if (boundp symbol)
+            (set symbol (read (buffer-string)))
+          (throw 'Error nil))))
     
     ;; Return value
     t))
@@ -398,6 +403,8 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
                            (projectIDE-project-root-creator projectRoot)
                            (projectIDE-RECORD-create
                             (concat (file-name-as-directory projectRoot) PROJECTIDE-PROJECTROOT-IDENTIFIER))
+                           (projectIDE-individual-record-create
+                            (concat (file-name-as-directory projectRoot) PROJECTIDE-PROJECTROOT-IDENTIFIER))
                            
                            (run-hooks 'projectIDE-global-project-create-hook)
                            (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
@@ -420,23 +427,23 @@ Descrip.:\t Path to project root."
   (unless (memq PROJECTIDE-PROJECTROOT-IDENTIFIER (directory-files (file-name-as-directory path)))
     (write-region "" nil (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT-IDENTIFIER) t 'inhibit))
 
-    (let* ((file (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT-IDENTIFIER))
-           (project (projectIDE-configParser file))
-           (signature (concat (number-to-string (random most-positive-fixnum))
-                              (number-to-string (random most-positive-fixnum))
-                              (number-to-string (random most-positive-fixnum))))
-           (name (project-name project)))
+    (let* ((letfile (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT-IDENTIFIER))
+           (letproject (projectIDE-configParser letfile))
+           (letsignature (concat (number-to-string (random most-positive-fixnum))
+                                 (number-to-string (random most-positive-fixnum))
+                                 (number-to-string (random most-positive-fixnum))))
+           (letname (project-name letproject)))
            
-      (with-temp-file file
+      (with-temp-file letfile
         ;; If signature exists in .projectIDE, remove it
-        (when (project-signature project)
+        (when (project-signature letproject)
           (while (search-forward-regexp "^signature=" nil t)
             (delete-region (line-beginning-position) (1+ (line-end-position)))))
         ;; If name not exists in projectIDE, create for it
-        (unless name
+        (unless letname
           (while (search-forward-regexp "^name=" nil t)
             (delete-region (line-beginning-position) (1+ (line-end-position))))
-          (setq name (file-name-nondirectory (directory-file-name (file-name-directory file)))))
+          (setq letname (file-name-nondirectory (directory-file-name (file-name-directory letfile)))))
 
         ;; Write to .projectIDE
         (goto-char 1)
@@ -444,14 +451,15 @@ Descrip.:\t Path to project root."
                 "## There are several keys availiable.\n"
                 "## You can see documents for all keys.\n"
                 "## Keys must start on a newline and end with a '='.\n"
-                "signature=" signature "\n"
+                "signature=" letsignature "\n"
                 "## Never create or change the signature manually!!!\n\n"
-                "name=" name "\n"))))
+                "name=" letname "\n"
+                "include=" (mapconcat 'identity (project-include letproject) " ") "\n"
+                "exclude=" (mapconcat 'identity (project-exclude letproject) " ")"\n"))))
 
 (defun projectIDE-RECORD-create (configfile)
   "Create record by reading CONFIGFILE.
 Write to RECORD file afterward."
-
   (let ((letproject (projectIDE-configParser configfile))
         (letrecord (make-record)))
     (setf (record-signature letrecord)(project-signature letproject)
@@ -461,7 +469,49 @@ Write to RECORD file afterward."
           (record-last-modify letrecord) (time-to-days (current-time)))
     (add-to-list 'projectIDE-global-project-record letrecord)
     (fout<<projectIDE PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE 'projectIDE-global-project-record)))
-   
+
+(defun projectIDE-individual-record-create (configfile)
+  "Create individual record by CONFIGFILE."
+  (let* ((letproject (projectIDE-configParser configfile))
+         (letfile (concat PROJECTIDE-INDIVIDUAL-PROJECT-RECORD-PATH (project-signature letproject))))
+        (unless (file-exists-p letfile)
+          (write-region "" nil letfile t 'inhibit)
+          (fout<<projectIDE letfile 'letproject))))
+
+(defun projdectIDE-individual-record-file-list-update () "DOC.")
+
+(defun projectIDE- ()
+  "DOC."
+  (let ((foundProject nil)
+        (currentBufferPath (file-name-directory (buffer-file-name)))
+        (currentProject projectIDE-current-opened-project)
+        (currentRecord))
+    
+    ;; Find project in currnt opened project
+    (while (and (not foundProject) (car-safe currentProject))
+      (when (string-prefix-p
+             (project-path (car currentProject))
+             currentBufferPath)
+        (setq foundProject t))
+      (setq currentProject (cdr currentProject)))
+
+    ;; Search .projectIDE up directory
+    (let ((searchCount projectIDE-config-file-search-up-level)
+          (path currentBufferPath))
+      (while (and (not foundProject) (> searchCount 0))
+        (when (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
+          (add-to-list 'projectIDE-current-opened-project
+                       (projectIDE-configParser (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
+          (setq foundProject t))
+        (setq searchCount (1- searchCount))
+        (setq path (file-name-directory (directory-file-name path)))))
+        
+        ;; Find in 
+    ;;(while (and (not foundProject) (car-sa)))
+        ))
+
+          
+  
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
   (interactive)
@@ -471,7 +521,7 @@ Write to RECORD file afterward."
     (make-directory PROJECTIDE-INDIVIDUAL-PROJECT-RECORD-PATH))
   (unless (file-exists-p PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE)
     (write-region "" nil PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE t 'inhibit))
-  (if (fin>>projectIDE PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE)
+  (if (fin>>projectIDE PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE 'projectIDE-global-project-record)
       (progn
         (message "[projectIDE] projectIDE starts successfully.")
         (setq projectIDE-p t))
