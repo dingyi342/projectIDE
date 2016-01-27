@@ -58,21 +58,26 @@
 (defconst PROJECTIDE-PROJECTROOT-IDENTIFIER ".projectIDE"
   "The root file indicator.")
 
-(defcustom projectIDE-global-record-path
-  (concat (file-name-as-directory user-emacs-directory) "projectIDE")
-  "Type: string\nPath for storing projectIDE database."
+(defcustom projectIDE-database-path
+  (file-name-as-directory
+   (concat (file-name-as-directory user-emacs-directory) "projectIDE"))
+  "Type: string\nPath for storing projectIDE RECORD database."
   :tag "Main database path"
   :type 'directory
   :group 'projectIDE-global)
 
-(defconst projectIDE-global-project-record-filename "REDORD"
+(defconst PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE
+  (concat projectIDE-database-path "RECORD")
   "Type: string\nFilename for project record.")
 
-(defconst projectIDE-individual-project-record-path
-  (concat (file-name-as-directory projectIDE-global-record-path) "INDIVIDUAL")
+(defconst PROJECTIDE-INDIVIDUAL-PROJECT-RECORD-PATH
+  (file-name-as-directory (concat projectIDE-database-path "INDIVIDUAL"))
   "Type: string\nFolder path to individual project record.")
 
 ;; Runtime Variable
+(defvar projectIDE-p nil
+  "Indicate whether projectIDE is running.")
+
 (defvar projectIDE-global-project-record nil
   "Database recording all project.
 Never attempt to modify it directly.")
@@ -87,9 +92,9 @@ variable as the default directory."
   :type 'directory
   :group 'projectIDE-project-creation)
 
-(defcustom projectIDE-create-hook nil
+(defcustom projectIDE-global-project-create-hook nil
   "Hook runs when creating project."
-  :tag "projectIDE-create-hook"
+  :tag "projectIDE-global-project-create-hook"
   :type 'hook
   :group 'projectIDE-project-creation
   :group 'projectIDE-hook)
@@ -130,20 +135,29 @@ Must not change.")
 (cl-defstruct project
   ;; public
   ;; config file
-  signature ;; string         eg. "173874102"
-  name      ;; string         eg. "HelloWorld"
-  include   ;; string-list    eg. ("src/*.cpp" "inc/*.h")
-  exclude   ;; string-list    eg. ("*.git" ".projectIDE")
-  injector  ;; injector-list
+  signature           ;; string         eg. "173874102"
+  name                ;; string         eg. "HelloWorld"
+  (include '("*"))             ;; string-list    eg. ("src/*.cpp" "inc/*.h")
+  exclude             ;; string-list    eg. ("*.git" ".projectIDE")
+  project-open-hook   ;; symbol
+  file-open-hook      ;; symbol
+  compile-hook        ;; symbol
+  injector            ;; injector-list
 
   ;; create
-  hook      ;; symbol-list    eg. ('fun1 'fun2 'fun3)
+  file-create-hook    ;; symbol-list    eg. ('fun1 'fun2 'fun3)
 
   ;; private
-  ;; 
-  create    ;; integer        eg. 1234
-  ;; 
+  include-files       ;; string-list
+  exclude-files
   file-list)
+
+(cl-defstruct record
+  signature
+  name
+  path
+  create-date
+  last-modify)
 
 (defun projectIDE-configParser (file)
   "Parse .projectIDE config FILE.
@@ -167,9 +181,9 @@ Descrip.:\t Flie path to .projectIDE."
       
       (with-temp-buffer
         (insert-file-contents file)
-        (message "[ProjectIDE] Config file contains: %s" (buffer-string))
+        ;; (message "[ProjectIDE] Config file contains: %s" (buffer-string))
         (while (search-forward-regexp key nil t)
-          (message "[ProjectIDE] Found something")
+          ;; (message "[ProjectIDE] Found something")
           (save-excursion
             (beginning-of-line)
             (let ((notFound t)
@@ -235,67 +249,27 @@ Descrip.:\t String to be trimmed."
         nil
       return-string)))
 
-(defun projectIDE-dataSerializer (data)
-  "This is a projectIDE internal function.
-Return a single string of serialized DATA.
-The string begins with a start flag \\n#### and the symbol name.
-The string ends with an end flag \\n##END###.
-The real data is in the middle.
-
-Example:
-\t\(setq foo '\(\"Hello\" \"World\"\)\)
-\t\(projectIDE-dataSerializer 'foo\)
-\t=>\t\"
-\t\t####foo
-\t\t\(\"Hello\" \"World\"\)
-\t\t###END###\"
-
-Return
-Type:\t\t string
-Descrip.:\t Single serialized string.
-
-DATA
-Type:\t\t symbol
-Descrip.:\t Any symbol with ascii data."
-  (let ((symbol (symbol-name data))
-        (value (symbol-value data)))
-    (with-temp-buffer
-      (insert "\n####" symbol "\n")
-      (insert (prin1-to-string value))
-      (insert "\n###END###")
-      (buffer-string))))
-
-
-(defun fout<<projectIDE (append file data &rest moredata)
-       "Write data to file.
+(defun fout<<projectIDE (file data)
+       "Write FILE with DATA.
+DATA is any symbol variable in Emacs.
 
 This function is safe.
 It checks the accessibilty of file.
 Return NIL if file is not accessable.
 It checks the data for a valid symbol.
 Return NIL if data value is void.
-It checks each of the moredata for a valid symbol.
-If any candidate consists invalid symbol, NIL is return.
-However, invalid symbol found in moredata will not terminate
-the output stream.  The invalid symbol is ignored instead.
-Error message will be printed and proceed to next candidate.
+Return t if wirting file successfully
 
 It is designed to simulate C++ std::cout.
 
 Example:
-\(if \(file<<data nil \"~\\Documents\\foo.txt\" 'foo 'bar 'hello 'world\)
+\(if \(file<<data \"~\\Documents\\foo.txt\" 'foo\)
     \(message \"All success.\"\)
   \(message \"Some problem.\"\)\)
 
 Return
-Type:\t\t bool or list
-Descrip.:\t t for no error.
-\t\t\t nil for error at writing first data to file
-\t\t\t a list for ignored error in more data
-
-APPEND
 Type:\t\t bool
-Descrip.:\t If non-nil append, otherwise overwrite.
+Descrip.:\t t for no error, nil for error.
 
 FILE
 Type:\t\t string
@@ -304,159 +278,85 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt
 
 DATA
 Type:\t\t symbol
-Descrip.:\t Serialize data holds by symbol.
-
-MOREDATA
-Type:\t\t symbol
-Descrip.:\t Same as DATA.  Can serialize multiple symbols.
-\t\t\t MOREDATA will append to FILE no matter what APPEND is."
+Descrip.:\t Serialize data holds by symbol."
+       
        (catch 'Error
-
-         ;; Check file accessibility
-         (unless (and (file-exists-p file) (file-writable-p file))
-           (let ((parentPath (file-name-directory file)))
-             (when (or (file-directory-p parentPath)
-                       (make-directory parentPath t)
-                       (file-directory-p parentPath))
-               (write-region "" nil file nil 'inhibit nil 'exc1))
-             (unless (and (file-exists-p file) (file-writable-p file))
-               (message "Error writing file!")
-               (throw 'Error nil))))
-
-         ;; Serialize first entry
-         (unless (boundp data)
-           (message "Symbol '%s' is not defined." (symbol-name data))
-           (throw 'Error nil))
-         (write-region (projectIDE-dataSerializer data) nil file append 'inhibit)
-
-         ;; Serialize all other entries
          (let ((noError t))
-           (while (car-safe moredata)
-             (if (boundp (car moredata))
-                 (write-region (projectIDE-dataSerializer (car moredata)) nil file t 'inhibit)
-               (when (equal noError t) (setq noError nil))
-               (setq noError (append (list (symbol-name (car moredata))) noError)))
-             (setq moredata (cdr moredata)))
+           ;; Check file accessibility
+           (unless (and (file-exists-p file) (file-writable-p file))
+             (let ((parentPath (file-name-directory file)))
+               (when (or (file-directory-p parentPath)
+                         (make-directory parentPath t)
+                         (file-directory-p parentPath))
+                 (write-region "" nil file nil 'inhibit nil 'exc1))
+               (unless (and (file-exists-p file) (file-writable-p file))
+                 (throw 'Error nil))))
 
+           ;; Check symbol exists
+           (unless (boundp data)
+             (throw 'Error nil))
+
+           ;; Serialize and wirte data to file
+           (with-temp-file file
+             (insert "######" (symbol-name data) "\n")
+             (insert (prin1-to-string (symbol-value data)))
+             (insert "####END####"))
+           
            ;; return value
            noError)))
 
-(defun projectIDE-dataParser (file)
-  "This is a projectIDE internal function.
-It parse FILE which consist projectIDE data
-produced by projectIDE-dataSerializer.
-The file may have mulitple symbols and corresponding value.
-If symbol has already been defined in Emacs,
-projectIDE-dataParser will restore it.
-If symbol has not yet defined in Emacs,
-projectIDE-dataParser will ignore it.
-If there is any format error of the FILE,
-projectIDE-dataParser will parse up to the error point
-and terminate the parsing process.
-projectIDE-dataParser returns t if it can parse the whole file.
-It returns nil if there is format error.
-Or it returns a list for ignored symbol.
-
-Return
-Type:\t\t list or bool
-Descrip.:\t t for no error.
-\t\t\t nil for failing to load data from first FILE
-\t\t\t a list for ignored symbols or files
-
-FILE
-Type:\t\t string
-Descrip.: file path"
-  
-  (catch 'Error
-    (let ((noError t))
-      (with-temp-buffer
-        (insert-file-contents file)
-        (while (search-forward "####" nil t)
-          (let (startPoint endPoint name value)
-            (setq startPoint (point))
-            (unless (search-forward "\n" nil t)
-              (message "File '%s' corrupted." file)
-              (throw 'Error nil))
-            (setq endPoint (point))
-            (when (or (search-backward "###" startPoint t) (search-backward " " startPoint t))
-              (message "File '%s' corrupted." file)
-              (throw 'Error nil))
-            (setq name (trim-string (buffer-substring-no-properties startPoint endPoint)))
-            (setq startPoint endPoint)
-            (unless (search-forward "###END###" nil t)
-              (message "File '%s' corrupted." file)
-              (throw 'Error nil))
-            (setq endPoint (point))
-            (save-excursion
-              (backward-char 9)
-              (when (search-backward "###" startPoint t)
-                (message "File '%s' corrupted." file)
-                (throw 'Error nil))
-              (setq value (trim-string (buffer-substring-no-properties startPoint (point)))))
-
-            ;; Check symbol. If exists, import data.
-            (if (boundp (intern name))
-                (set (intern name) (read value))
-              (when (equal noError t) (setq noError nil))
-              (setq noError (cons name noError))))))
-      
-    ;; Return type
-    noError)))
-
-(defun fin>>projectIDE (file &rest morefile)
+(defun fin>>projectIDE (file)
   "This function is safe.
-It reads data from FILE and call projectIDE-dataParser
-to restore the data.
-It accepts more than one files by MOREFILE.
-It returns t it there isn't any error,
-returns nil if the first FILE cannot load successfully,
-and returns a list for any ignored files/symbols.
+It parse data from FILE and call to restore the data.
+
+It returns t it there isn't any error
+It returns nil if data cannot be restored.
 
 Return
-Type:\t\t bool or list
-Descrip.:\t t for no error.
-\t\t\t nil for file format error
-\t\t\t a list for ignored symbols
+Type:\t\t bool
+Descrip.:\t t for no error, nil for error.
 
 FILE
 Type:\t\t string
 Descrip.:\t Path to input file.
-Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt
+Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
+  
+  (catch 'Error
 
-MOREFILE
-Type:\t\t string
-Descrip.:\t Same as FILE.  Can read multiple files."
-
-  ;; Read first file
-  (let ((noError t))
-    (catch 'Error
-
-      ;; Check file accessibility
-      (unless (file-readable-p file)
-        (message "Error reading file!")
-        (throw 'Error nil))
-
-      (setq noError (projectIDE-dataParser file)))
-
-    (unless noError
+    ;; Check file accessibility
+    (unless (file-readable-p file)
       (throw 'Error nil))
 
-    (while (car-safe morefile)
-      (let ((file (car morefile)))
-        (if (file-readable-p file)
-            (let ((return-value (projectIDE-dataParser file)))
-              (if return-value
-                  (unless (equal return-value t)
-                    (and (equal noError t)(setq noError nil))
-                    (setq noError (append return-value noError)))
-                (and (equal noError t)(setq noError nil))
-                (setq noError (append (list file) noError))))
-          (and (equal noError t)(setq noError nil))
-          (setq noError (append (list file) noError))))
-      (setq morefile (cdr morefile)))
+    ;; Parse file
+    (with-temp-buffer
+      (insert-file-contents file)
+      (unless (equal (point-min) (point-max))
+        (let (startPoint endPoint name value)
+          (unless (search-forward "######" nil t)
+            (throw 'Error nil))
+          (setq startPoint (point))
+          (unless (search-forward "\n" nil t)
+            (throw 'Error nil))
+          (setq endPoint (point))
+          (when (or (search-backward "####" startPoint t) (search-backward " " startPoint t))
+            (throw 'Error nil))
+          (setq name (trim-string (buffer-substring-no-properties startPoint endPoint)))
+          (setq startPoint endPoint)
+          (unless (search-forward "####END####" nil t)
+            (throw 'Error nil))
+          (setq endPoint (point))
+          (backward-char 9)
+          (when (search-backward "####" startPoint t)
+            (throw 'Error nil))
+          (setq value (buffer-substring-no-properties startPoint (point)))
+        
+          ;; Check symbol. If exists, import data.
+          (if (boundp (intern name))
+              (set (intern name) (read value))
+            (throw 'Error nil)))))
     
     ;; Return value
-    noError))
+    t))
 
 
 (cl-defmacro projectIDE-create (projectType &key templateDir defaultDir document)
@@ -485,20 +385,25 @@ Descrip.:\t Same as FILE.  Can read multiple files."
            (setq dir (file-name-as-directory dir))
 
            (if (not (string= projectName "")) ;; Null string guard
-               (if (file-accessible-directory-p dir) ;; Invalid project directory guard
+               (if (and (file-accessible-directory-p dir) (file-writable-p dir)) ;; Invalid project directory guard
                    (let ((projectRoot (concat dir projectName)))
-                     (if (or (not projectIDE-create-require-confirm)
+                     (if (or (not projectIDE-create-require-confirm) ;; Confirm project creation guard
                              (y-or-n-p (format "Project\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
                                                projectName ,templateDir projectRoot)))
+
                          ;; Create project
                          (progn
                            (make-directory projectRoot)
                            (copy-directory ,templateDir projectRoot nil nil t)
                            (projectIDE-project-root-creator projectRoot)
-                           (run-hooks 'projectIDE-create-hook)
+                           (projectIDE-RECORD-create
+                            (concat (file-name-as-directory projectRoot) PROJECTIDE-PROJECTROOT-IDENTIFIER))
+                           
+                           (run-hooks 'projectIDE-global-project-create-hook)
                            (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
                                     projectName ,templateDir projectRoot))
-                       (message "Projection creation canceled.")))
+                       
+                       (message "Projection creation canceled."))) ;; Else of confirm project creation guard
                  (message "Project directory \"%s\" is invalid. Either not exist or non-accessible." dir)) ;; Else of invalid project directory guard
              (message "Project name cannot be empty string."))) ;; Else of Null string guard
       
@@ -507,49 +412,70 @@ Descrip.:\t Same as FILE.  Can read multiple files."
 
 (defun projectIDE-project-root-creator (path)
   "Create '.projectIDE' at PATH to indicate a project root.
-Generate project signature if required.
 
 PATH
 Type:\t\t string
 Descrip.:\t Path to project root."
-    (unless (memq PROJECTIDE-PROJECTROOT-IDENTIFIER (directory-files (file-name-as-directory path)))
-      (write-region "" nil (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT-IDENTIFIER) t 'inhibit))
+  ;; Generate .projectIDE if not exist
+  (unless (memq PROJECTIDE-PROJECTROOT-IDENTIFIER (directory-files (file-name-as-directory path)))
+    (write-region "" nil (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT-IDENTIFIER) t 'inhibit))
 
     (let* ((file (concat (file-name-as-directory path) PROJECTIDE-PROJECTROOT-IDENTIFIER))
            (project (projectIDE-configParser file))
            (signature (concat (number-to-string (random most-positive-fixnum))
+                              (number-to-string (random most-positive-fixnum))
                               (number-to-string (random most-positive-fixnum))))
-           (name )
-          ;; Cannot find signature
+           (name (project-name project)))
+           
       (with-temp-file file
+        ;; If signature exists in .projectIDE, remove it
         (when (project-signature project)
           (while (search-forward-regexp "^signature=" nil t)
-            (delete-region (line-beginning-position) (line-end-position))))
-        (let ()
-              name
-              creation
-              path)
-        (insert "##Never create or change the signature manually!\n"
-                "signature:" signature "\n")
-        (if (search-forward-regexp "name:" nil t)
-            (message "Generated signature but name can find.")
-          (progn
-            (setq name (file-name-nondirectory (directory-file-name (file-name-directory file))))
-            (goto-char 1)
-            (insert "name:" name "\n")
-            (setq day (time-to-days (current-time)))
-            (add-to-list 'projectIDE-global-project-record (list signature name day)))))))
-    
+            (delete-region (line-beginning-position) (1+ (line-end-position)))))
+        ;; If name not exists in projectIDE, create for it
+        (unless name
+          (while (search-forward-regexp "^name=" nil t)
+            (delete-region (line-beginning-position) (1+ (line-end-position))))
+          (setq name (file-name-nondirectory (directory-file-name (file-name-directory file)))))
+
+        ;; Write to .projectIDE
+        (goto-char 1)
+        (insert "## This file is generated by projectIDE\n"
+                "## There are several keys availiable.\n"
+                "## You can see documents for all keys.\n"
+                "## Keys must start on a newline and end with a '='.\n"
+                "signature=" signature "\n"
+                "## Never create or change the signature manually!!!\n\n"
+                "name=" name "\n"))))
+
+(defun projectIDE-RECORD-create (configfile)
+  "Create record by reading CONFIGFILE.
+Write to RECORD file afterward."
+
+  (let ((letproject (projectIDE-configParser configfile))
+        (letrecord (make-record)))
+    (setf (record-signature letrecord)(project-signature letproject)
+          (record-name letrecord) (project-name letproject)
+          (record-path letrecord) (file-name-directory configfile)
+          (record-create-date letrecord) (time-to-days (current-time))
+          (record-last-modify letrecord) (time-to-days (current-time)))
+    (add-to-list 'projectIDE-global-project-record letrecord)
+    (fout<<projectIDE PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE 'projectIDE-global-project-record)))
+   
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
   (interactive)
-  (let* ((file (concat (file-name-as-directory projectIDE-global-record-path)
-                       projectIDE-global-project-record-filename)))
-    (unless (file-exists-p projectIDE-individual-project-record-path)
-      (make-directory projectIDE-individual-project-record-path))
-    (unless (file-exists-p file)
-      (write-region "" nil file t 'inhibit))
-    (fin>>projectIDE file)))
+  (unless (file-exists-p projectIDE-database-path)
+    (make-directory projectIDE-database-path))
+  (unless (file-exists-p PROJECTIDE-INDIVIDUAL-PROJECT-RECORD-PATH)
+    (make-directory PROJECTIDE-INDIVIDUAL-PROJECT-RECORD-PATH))
+  (unless (file-exists-p PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE)
+    (write-region "" nil PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE t 'inhibit))
+  (if (fin>>projectIDE PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE)
+      (progn
+        (message "[projectIDE] projectIDE starts successfully.")
+        (setq projectIDE-p t))
+    (message "[projectIDE] Error!!! projectIDE starts fail.")))
 
 ;;;; Testing function
 (defvar projectIDE-test-path
@@ -569,6 +495,7 @@ Descrip.:\t Path to project root."
 (defvar projectIDE-testvar3 nil)
 (defvar projectIDE-testvar4 nil)
 (defvar projectIDE-testvar5 nil)
+
 ;; (time-to-days (current-time))
 ;;; Testing file stream
 ;; (fout<<projectIDE nil projectIDE-testfile1 'projectIDE-testvar1 'projectIDE-testvar2 'sdkf 'jfaksd 'projectIDE-test-path)
