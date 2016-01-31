@@ -66,7 +66,7 @@
   :type 'directory
   :group 'projectIDE-global)
 
-(defconst PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE
+(defconst PROJECTIDE-GLOBAL-RECORD-FILE
   (concat projectIDE-database-path "RECORD")
   "Type: string\nFilename for project record.")
 
@@ -76,17 +76,29 @@
 
 ;; Runtime Variable
 (defvar projectIDE-p nil
-  "Indicate whether projectIDE is running.")
+  "Indicate whether projectIDE is running.
+Never attempt to modify it directly.")
 
 (defvar projectIDE-global-project-record nil
+  ;; hash table
+  ;; key: signature
+  ;; value: project-record object
   "Database recording all project.
 Never attempt to modify it directly.")
 
 (defvar projectIDE-current-opened-project nil
+  ;; hash table
+  ;; key: signature
+  ;; value: project object
   "Current opened project.
-Never attempt to modify it directly.
+Never attempt to modify it directly.")
 
-Type: projectIDE-project object list")
+(defvar projectIDE-buffer-trace
+  ;; hash table
+  ;; key: buffer
+  ;; value: signature
+  "Trace buffer which is a projectIDE project.
+Never attempt to modify it directly.")
 
 ;; Project Creation Variable
 (defcustom projectIDE-create-defaultDir (getenv "HOME")
@@ -118,8 +130,8 @@ Other values ask for the confirmation."
 (defconst projectIDE-default-config-key
   '("^signature="
     "^name="
-    "^include="
     "^exclude="
+    "^whitelist="
     "^inject=")
   "Default projectIDE config file keyword.
 Must not change.")
@@ -148,9 +160,8 @@ Must not change.")
   :group 'projecIDE-config-file
   :type '(repeat string))
 
-(defcustom projectIDE-default-include
-  '("*")
-  "A list of include items by projectIDE."
+(defcustom projectIDE-default-whitelist nil
+    "A list of exclude items by projectIDE."
   :group 'projecIDE-config-file
   :type '(repeat string))
 
@@ -172,8 +183,8 @@ Must not change.")
   ;; config file
   signature           ;; string         eg. "173874102"
   name                ;; string         eg. "project1"
-  (include projectIDE-default-include)    ;; string-list    eg. ("src/*.cpp" "inc/*.h")
   (exclude projectIDE-default-exclude)    ;; string-list    eg. ("*.git" ".projectIDE")
+  whitelist
   project-open-hook   ;; symbol
   file-open-hook      ;; symbol
   compile-hook        ;; symbol
@@ -183,10 +194,9 @@ Must not change.")
   file-create-hook    ;; symbol-list    eg. ('fun1 'fun2 'fun3)
 
   ;; private
-  last-file-list-update ;; string-list
-  inc-exc-changed
-  file-list
-  last-open-file-list)
+  folder-hash  ;; key path value last-modify
+  file-hash    ;; key path value file list
+  opened-buffer)
 
 (cl-defstruct projectIDE-record
   signature
@@ -194,27 +204,34 @@ Must not change.")
   create-date
   last-modify)
 
-(defun projectIDE-get-record-by-signature (signature)
-  "Return record by the given SIGNATURE.
+(defun projectIDE-find-record-by-path (path)
+  "Return record signature by the given PATH.
 Record is search in projectIDE-global-project-record.
 
 Return
-Type:\t\t projectIDE-record object or nil
-Descrip.:\t projectIDE-record object of given SIGNATURE.
-\t\t\t nil if SIGNATURE not found.
+Type:\t\t projectIDE-record signature or nil
+Descrip.:\t projectIDE-record signature of given PATH.
+\t\t\t nil if PATH not found.
 
-SIGNATURE
+PATH
 Type:\t\t string
-Descript.:\t Signature of project."
-  (let ((record projectIDE-global-project-record)
+Descript.:\t File or folder path in string."
+  (let ((record (hash-table-values projectIDE-global-project-record))
         (found nil))
     (while (and (not found) (car-safe record))
-      (when (string= (projectIDE-record-signature record) signature)
-        (setq found record))
+      (when (string-prefix-p (projectIDE-record-path (car record)) path)
+        (setq found (projectIDE-record-signature (car record))))
       (setq record (cdr record)))
-
+    
     ;; Return value
     found))
+
+(cl-defstruct projectIDE-folder-tree
+  name
+  file
+  subfolder ;; '((name . 12345) (name . 87636))
+  )
+
 
 (defun projectIDE-configParser (file)
   "Parse .projectIDE config FILE.
@@ -250,31 +267,31 @@ Descrip.:\t Flie path to .projectIDE."
                       (cond
                        ((= counter 0) ;; "^signature="
                         (when (projectIDE-project-signature project)
-                          (message "[ProjectIDE] Error: Config file corrupt. 'signature' defined more than once.")
+                          (message "[ProjectIDE::Error] Config file corrupt. 'signature' defined more than once.")
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-signature project) (trim-string (buffer-substring-no-properties (point) line-end))))
                        ((= counter 1) ;; "^name="
                         (when (projectIDE-project-name project)
-                          (message "[ProjectIDE] Error: Config file corrupt. 'name' defined more than once.")
+                          (message "[ProjectIDE::Error] Config file corrupt. 'name' defined more than once.")
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-name project) (trim-string (buffer-substring-no-properties (point) line-end))))
-                       ((= counter 2) ;; "^include="
-                        (let ((include-list (projectIDE-project-include project))
-                              (value (split-string (buffer-substring-no-properties (point) line-end))))
-                          (when value
-                            (setq include-list (append include-list value))
-                            (setq include-list (cl-remove-duplicates include-list :test 'string=))
-                            (setf (projectIDE-project-include project) include-list))))
-                       ((= counter 3) ;; "^exclude="
-                        (let ((exclude-list (projectIDE-project-exclude project))
+                       ((= counter 2) ;; "^exclude="
+                        (let ((exclude-list (or (projectIDE-project-exclude project) ""))
                               (value (split-string (buffer-substring-no-properties (point) line-end))))
                           (when value
                             (setq exclude-list (append exclude-list value))
                             (setq exclude-list (cl-remove-duplicates exclude-list :test 'string=))
                             (setf (projectIDE-project-exclude project) exclude-list))))
+                       ((= counter 3) ;; "^whitelist="
+                        (let ((whitelist (or (projectIDE-project-whitelist project) ""))
+                              (value (split-string (buffer-substring-no-properties (point) line-end))))
+                          (when value
+                            (setq whitelist (append whitelist value))
+                            (setq whitelist (cl-remove-duplicates whitelist :test 'string=))
+                            (setf (projectIDE-project-whitelist project) whitelist))))
                        ((= counter 4) ;; "^inject"
                         ;; Implement later
-                        (message "[ProjectIDE] Inject eature not availiable for this version.")))
+                        (message "[ProjectIDE::Warning] Inject eature not availiable for this version.")))
                       (setq found t)))
                 (setq counter (1+ counter))
                 (setq keylist (cdr keylist)))))))
@@ -413,36 +430,51 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
            ;; Interactive call to ask for project name and project directory
            (interactive (list (read-string "Project Name: ")
                               (read-directory-name "Create project at: " ,defaultDir)))
-           (setq dir (file-name-as-directory dir))
+           (setq dir (file-name-as-directory (expand-file-name dir)))
 
-           (if (not (string= projectName "")) ;; Null string guard
-               (if (and (file-accessible-directory-p dir) ;; Invalid project directory guard
-                        (file-writable-p dir)
-                        (not (file-exists-p (concat dir projectName))))
+           (catch 'Error
+             ;; Validate input
+             ;; Check for initialization
+             (unless (or projectIDE-p (projectIDE-initialize))
+               (throw 'Error nil))
 
-                   (let ((projectRoot (concat dir projectName)))
-                     (if (or (not projectIDE-create-require-confirm) ;; Confirm project creation guard
-                             (y-or-n-p (format "Project\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
-                                               projectName ,templateDir projectRoot)))
+             ;; Prevent null string project name
+             (when (string= projectName "")
+               (message "[ProjectIDE::Error] Project name cannot be empty string.")
+               (throw 'Error nil))
+             ;; Make sure project root directory can be generated
+             (unless (and (file-accessible-directory-p dir) (file-writable-p dir))
+               (message (format "[ProjectIDE::Error] Project directory \"%s\" is not accessible." dir))
+               (throw 'Error nil))
+             (when (file-exists-p (concat dir projectName))
+               (message (format "[ProjectIDE::Error] Folder \"%s\" already exists in \"%s\". Operation cancelled." projectName dir))
+               (throw 'Error nil))
 
-                         ;; Create project
-                         (progn
-                           (make-directory projectRoot)
-                           (copy-directory ,templateDir projectRoot nil nil t)
-                           (projectIDE-project-root-creator (file-name-as-directory projectRoot))
-                           (projectIDE-RECORD-create
-                            (concat (file-name-as-directory projectRoot) PROJECTIDE-PROJECTROOT-IDENTIFIER))
-                           (projectIDE-individual-record-create
-                            (concat (file-name-as-directory projectRoot) PROJECTIDE-PROJECTROOT-IDENTIFIER))
-                           
-                           (run-hooks 'projectIDE-global-project-create-hook)
-                           (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
-                                    projectName ,templateDir projectRoot))
-                       
-                       (message "Projection creation canceled."))) ;; Else of confirm project creation guard
-                 (message "Project directory \"%s\" is invalid. Either not exist or non-accessible." dir)) ;; Else of invalid project directory guard
-             (message "Project name cannot be empty string."))) ;; Else of Null string guard
-      
+             ;; Ask for user prompt
+             (unless (or (not projectIDE-create-require-confirm) ;; Confirm project creation guard
+                         (y-or-n-p (format "Project\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
+                                           projectName ,templateDir (concat dir projectName))))
+               (message "[ProjectIDE::Info] Projection creation canceled.")
+               (throw 'Error nil))
+
+
+             ;; Project create here
+             (let ((projectRoot (file-name-as-directory (concat dir projectName))))
+               ;; Create project structure by template
+               (make-directory projectRoot)
+               (copy-directory ,templateDir projectRoot nil nil t)
+               ;; Generate .projectIDE file
+               (projectIDE-project-root-creator projectRoot)
+               ;; Create global record
+               (projectIDE-global-record-create (concat projectRoot PROJECTIDE-PROJECTROOT-IDENTIFIER))
+               ;; Create individual record
+               (projectIDE-individual-record-create (concat projectRoot PROJECTIDE-PROJECTROOT-IDENTIFIER))
+
+               (run-hooks 'projectIDE-global-project-create-hook)
+               (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
+                        projectName ,templateDir projectRoot))))
+                 
+      ;; Macro error message
       (message "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir))))
 
 
@@ -476,15 +508,18 @@ Descrip.:\t Path to project root."
       (goto-char 1)
       (insert "## This file is generated by projectIDE\n"
               "## There are several keys availiable.\n"
-              "## You can see documents for all keys.\n"
+              "## You can see documentation for all keys.\n"
               "## Keys must start on a newline and end with a '='.\n"
+              "## Below is an example for key 'signature.\n"
               "signature=" signature "\n"
-              "## Never create or change the signature manually!!!\n\n"
+              "## Signature is unique for each project.\n"
+              "## ProjectIDE used the signature to trace every data on that project.\n"
+              "## So never create or change the signature manually!!!\n\n"
               "name=" name "\n"
-              "include=" (mapconcat 'identity (projectIDE-project-include project) " ") "\n"
-              "exclude=" (mapconcat 'identity (projectIDE-project-exclude project) " ")"\n"))))
+              "exclude=" (mapconcat 'identity (projectIDE-project-exclude project) " ") "\n"
+              "whitelist=" (mapconcat 'identity (projectIDE-project-whitelist project) " ") "\n"))))
 
-(defun projectIDE-RECORD-create (configfile)
+(defun projectIDE-global-record-create (configfile)
   "Create projectIDE-record by reading CONFIGFILE.
 Write to RECORD file afterward."
   (let ((project (projectIDE-configParser configfile))
@@ -493,8 +528,8 @@ Write to RECORD file afterward."
           (projectIDE-record-path record) (file-name-directory configfile)
           (projectIDE-record-create-date record) (time-to-days (current-time))
           (projectIDE-record-last-modify record) (time-to-days (current-time)))
-    (add-to-list 'projectIDE-global-project-record record)
-    (fout<<projectIDE PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE 'projectIDE-global-project-record)))
+    (puthash (projectIDE-project-signature project) record projectIDE-global-project-record)
+    (fout<<projectIDE PROJECTIDE-GLOBAL-RECORD-FILE 'projectIDE-global-project-record)))
 
 (defun projectIDE-individual-record-create (configfile)
   "Create individual record by CONFIGFILE."
@@ -509,66 +544,118 @@ Write to RECORD file afterward."
 (defun projectIDE-find-file-check ()
   "DOC."
   (let ((found nil)
-        (current-buffer-path (file-name-directory (buffer-file-name)))
-        (current-opened-project projectIDE-current-opened-project))
-    
-    ;; Find project in current opened project
-    ;; If found set found to t
-    (while (and (not found) (car-safe current-opened-project))
-      (when (string-prefix-p
-             (projectIDE-record-path (projectIDE-get-record-by-signature (projectIDE-project-signature (car current-opened-project))))
-             current-buffer-path)
-        (setq found t))
-      (setq current-opened-project (cdr current-opened-project)))
+        (signature nil))
 
-    ;; Search .projectIDE up directory
-    ;; If found set found to t
-    ;; and add project to projectIDE-current-opened-project
-    (let ((search-countdown projectIDE-config-file-search-up-level)
-          (path current-buffer-path))
-      (while (and (not found) (> search-countdown 0))
-        (when (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
-          (add-to-list 'projectIDE-current-opened-project
-                       (projectIDE-configParser (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
+    (let ((current-opened-project-signatures (hash-table-keys projectIDE-current-opened-project)))
+
+
+      ;; Find project in current opened project
+      ;; If found set found to t
+      (while (and (not found) (car-safe current-opened-project-signatures))
+        (when (string-prefix-p
+               (projectIDE-record-path
+                (gethash (car current-opened-project-signatures) projectIDE-global-project-record)) ;; get RECORD from current opened project
+               buffer-file-name)
+          (setq signature (car current-opened-project-signatures))
           (setq found t))
-        (setq search-countdown (1- search-countdown))
-        (setq path (file-name-directory (directory-file-name path)))))
+        (setq current-opened-project-signatures (cdr current-opened-project-signatures))))
+
 
     ;; Search in project RECORD
     ;; If found set found to t
-    ;; and add project to projectIDE-current-opened-project
-    (let ((record projectIDE-global-project-record))
-      (while (and (not found) (car-safe record))
-        (when (string-prefix-p
-               (projectIDE-record-path (car record))
-               current-buffer-path)
-          (add-to-list 'projectIDE-current-opened-project
-                       (projectIDE-configParser
-                        (concat (projectIDE-record-path (car record)) PROJECTIDE-PROJECTROOT-IDENTIFIER)))
-          (setq found t))
-        (setq record (cdr record))))
+    ;; And add project to projectIDE-current-opened-project
+    (unless found
+      (setq signature (projectIDE-find-record-by-path buffer-file-name))
+      (when signature
+        ;; Add project to current opened project
+        (puthash signature ;; key: signature
+                 (projectIDE-configParser ;; value: project object
+                  (concat ;; get .projectIDE full file path
+                   (projectIDE-record-path (gethash signature projectIDE-global-project-record))
+                   PROJECTIDE-PROJECTROOT-IDENTIFIER))
+                 projectIDE-current-opened-project) ;; table
+        (setq found t)))
 
-    ;;(unless found (message "[projectIDE] Not indexed.")) ;;debug
-    (when found
-      (message "[projectIDE] Open indexed file."))))
-
+    
+    ;; Search .projectIDE up directory
+    ;; If found set found to t,
+    ;; add project to projectIDE-current-opened-project
+    ;; and add current buffer to current opened buffer
+    (unless found
+      (let ((search-countdown projectIDE-config-file-search-up-level)
+            (path (file-name-directory (buffer-file-name))))
+        (while (and (not found) (> search-countdown 0))
+          (when (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
+            (let* ((projectIDE-rootfile (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
+                   (project (projectIDE-configParser projectIDE-rootfile)))
+              (if (projectIDE-project-signature project)
+                  ;; found .projectIDE with signature
+                  (progn
+                    (setq signature (projectIDE-project-signature project))
+                    (projectIDE-global-record-create projectIDE-rootfile)
+                    (unless (file-exists-p (concat PROJECTIDE-INDIVIDUAL-PROJECT-RECORD-PATH signature))
+                      (projectIDE-individual-record-create projectIDE-rootfile))
+                    (puthash signature project projectIDE-current-opened-project)
+                    (setq found t))
+                ;; found .projectIDE without signature
+                (if (y-or-n-p (format "[ProjectIDE::Info]\n.projectIDE root file found at %s.\nMake this as project root and index the project? "
+                                      path))
+                    (progn
+                      (projectIDE-project-root-creator path)
+                      (projectIDE-global-record-create projectIDE-rootfile)
+                      (projectIDE-individual-record-create projectIDE-rootfile)
+                      (setq project (projectIDE-configParser projectIDE-rootfile))
+                      (setq signature (projectIDE-project-signature project))
+                      (puthash signature project projectIDE-current-opened-project)
+                      (setq found t)
+                      (message "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
+                                (file-name-nondirectory (directory-file-name (file-name-directory projectIDE-rootfile))) path))
+                  (message "[ProjectIDE::Info] File opened without indexing.")
+                  (setq search-countdown -1)))))
           
+              (setq search-countdown (1- search-countdown))
+              (setq path (file-name-directory (directory-file-name path))))))
+
+    
+    (when found
+      ;; Add current buffer to opened buffer
+      (let* ((opened-buffer-list (projectIDE-project-opened-buffer
+                                  (gethash signature projectIDE-current-opened-project))))
+        (setf
+         ;; opened buffer field
+         (projectIDE-project-opened-buffer
+          (gethash signature projectIDE-current-opened-project)) ;; get a project object
+         (add-to-list 'opened-buffer-list buffer-file-name)))
+
+      (puthash (current-buffer) signature projectIDE-buffer-trace)
+      (message "[ProjectIDE::Info] Open indexed file."))))
+
   
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
   (interactive)
+  ;; Check whether projectIDE database folder exist
   (unless (file-exists-p projectIDE-database-path)
     (make-directory projectIDE-database-path))
+  ;; Check global RECORD file exist
+  (unless (file-exists-p PROJECTIDE-GLOBAL-RECORD-FILE)
+    (write-region "" nil PROJECTIDE-GLOBAL-RECORD-FILE t 'inhibit))
+  ;; Check INDIVIDUAL record folder exist
   (unless (file-exists-p PROJECTIDE-INDIVIDUAL-PROJECT-RECORD-PATH)
     (make-directory PROJECTIDE-INDIVIDUAL-PROJECT-RECORD-PATH))
-  (unless (file-exists-p PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE)
-    (write-region "" nil PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE t 'inhibit))
-  (if (fin>>projectIDE PROJECTIDE-GLOBAL-PROJECT-RECORD-FILE 'projectIDE-global-project-record)
+
+  (if (fin>>projectIDE PROJECTIDE-GLOBAL-RECORD-FILE 'projectIDE-global-project-record)
       (progn
-        (message "[projectIDE] projectIDE starts successfully.")
+        (unless projectIDE-global-project-record
+          (setq projectIDE-global-project-record (make-hash-table :test 'equal :size 40)))
+        (setq projectIDE-current-opened-project (make-hash-table :test 'equal :size 20))
+        (setq projectIDE-buffer-trace (make-hash-table))
+        (message "[ProjectIDE::Info] projectIDE starts successfully.")
         (add-hook 'find-file-hook 'projectIDE-find-file-check)
         (setq projectIDE-p t))
-    (message "[projectIDE] Error!!! projectIDE starts fail.")))
+    (message "[ProjectIDE::Error] projectIDE starts fail."))
+;; Return value
+  projectIDE-p)
 
 ;;;; Testing function
 (defvar projectIDE-test-path
@@ -581,19 +668,13 @@ Write to RECORD file afterward."
 (defvar projectIDE-testfile3 (concat projectIDE-test-path "testfile3.txt"))
 (defvar projectIDE-testfile4 (concat projectIDE-test-path "testfile4.txt"))
 (defvar projectIDE-testfile5 (concat projectIDE-test-path "testfile5.txt"))
-;; (defvar projectIDE-testvar1 '("Hello" "world" "I" "am" "Mola"))
  (defvar projectIDE-testvar1 nil)
-;; (defvar projectIDE-testvar2 '(1 '(2 '(3 '(4)))))
 (defvar projectIDE-testvar2 nil)
 (defvar projectIDE-testvar3 nil)
 (defvar projectIDE-testvar4 nil)
 (defvar projectIDE-testvar5 nil)
-
-;; (time-to-days (current-time))
-;;; Testing file stream
-;; (fout<<projectIDE nil projectIDE-testfile1 'projectIDE-testvar1 'projectIDE-testvar2 'sdkf 'jfaksd 'projectIDE-test-path)
-;; (fin>>projectIDE projectIDE-testfile1 projectIDE-testfile2 projectIDE-testfile3)
-;;;; End Testing
 (projectIDE-initialize)
+
+;;;; End Testing
 (provide 'projectIDE)
 ;;; projectIDE.el ends here
