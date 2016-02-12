@@ -107,7 +107,7 @@ Never attempt to modify it directly.")
   "Current opened project.
 Never attempt to modify it directly.")
 
-(defvar projectIDE-project-cache nil
+(defvar projectIDE-runtime-cache nil
   ;; hash table-backward-cell
   ;; key: signature
   ;; value: project cache object
@@ -158,13 +158,26 @@ Other values ask for the confirmation."
   "Default projectIDE config file keyword.
 Must not change.")
 
+(defun projectIDE-concat-regexp-list (list)
+  "Return a single regexp string from a LIST of separated regexp.
+
+Return
+Type:\t\t string
+Descrip.:\t A single string of combined regexp.
+\t\t\t If LIST is empty, return nil.
+
+LIST
+Type:\t\t string list
+Descrip.:\t A string list of regexp."
+  
+  (let (regexp)
+    (dolist (val list regexp)
+      (if regexp
+          (setq regexp (concat val "\\|" regexp))
+        (setq regexp val)))))
+
 (defvar projectIDE-default-config-key-regexp
-  (let (return)
-    (dolist (val projectIDE-default-config-key)
-      (if return
-          (setq return (concat val "\\|" return))
-        (setq return val)))
-    return)
+  (projectIDE-concat-regexp-list projectIDE-default-config-key)
   "Combine the projectIDE-default-exclude.")
 
 (defcustom projectIDE-default-exclude
@@ -270,7 +283,6 @@ Descrip.: Function producing the message.  Just for debug purpose."
            (setq logtype 2))
           ((eq type 'Info)
            (setq message-prefix "[projectIDE::Info]")
-           (message "fuckfuckyou")
            (setq logtype 1)))
 
     (when print
@@ -283,96 +295,10 @@ Descrip.: Function producing the message.  Just for debug purpose."
                (when (symbolp function)
                  (concat (symbol-name function) ": "))
                message "\n")
-       nil PROJECTIDE-LOG-FILE t 'inhibit))))
+       nil PROJECTIDE-LOG-FILE t 'inhibit))
 
-(defun projectIDE-find-record-by-path (path)
-  "Return record signature by the given PATH.
-Record is search in projectIDE-runtime-record.
-
-Return
-Type:\t\t projectIDE-record signature or nil
-Descrip.:\t projectIDE-record signature of given PATH.
-\t\t\t nil if PATH not found.
-
-PATH
-Type:\t\t string
-Descript.:\t File or folder path in string."
-  (let ((record (hash-table-values projectIDE-runtime-record))
-        (found nil))
-    (while (and (not found) (car-safe record))
-      (when (string-prefix-p (projectIDE-record-path (car record)) path)
-        (setq found (projectIDE-record-signature (car record))))
-      (setq record (cdr record)))
-    
     ;; Return value
-    found))
-
-(defun projectIDE-configParser (file)
-  "Parse .projectIDE config FILE.
-Return a projectIDE-project object created by the FILE.
-If .projectIDE is a blank file, return a default projectIDE-project object.
-If there is any problem parsing the .projectIDE file, return nil.
-
-Return
-Type:\t\t projectIDE-project object or nil
-Descrip.:\t Project object created by parsing FILE.
-\t\t\t: nil for any error.
-
-FILE
-Type:\t\t string
-Descrip.:\t Flie path to .projectIDE."
-  (catch 'parse-error
-    (let ((project (make-projectIDE-project)))
-      
-      (with-temp-buffer
-        (insert-file-contents file)
-        (goto-char 1)
-
-        ;; Search keys
-        (while (search-forward-regexp projectIDE-default-config-key-regexp nil t)
-          (save-excursion
-
-            ;; Identify key
-            (beginning-of-line)
-            (let ((found nil)
-                  (line-end (line-end-position))
-                  (keylist projectIDE-default-config-key)
-                  (counter 0))
-              (while (and (not found) (car-safe keylist))
-                (if (search-forward-regexp (car keylist) line-end t)
-                    (progn
-                      (cond
-                       ((= counter 0) ;; "^signature="
-                        (when (projectIDE-project-signature project)
-                          (message "[ProjectIDE::Error] Config file corrupt. 'signature' defined more than once.")
-                          (throw 'parse-error nil))
-                        (setf (projectIDE-project-signature project) (trim-string (buffer-substring-no-properties (point) line-end))))
-                       ((= counter 1) ;; "^name="
-                        (when (projectIDE-project-name project)
-                          (message "[ProjectIDE::Error] Config file corrupt. 'name' defined more than once.")
-                          (throw 'parse-error nil))
-                        (setf (projectIDE-project-name project) (trim-string (buffer-substring-no-properties (point) line-end))))
-                       ((= counter 2) ;; "^exclude="
-                        (let ((exclude-list
-                               (or (split-string (buffer-substring-no-properties (point) line-end))
-                                   (projectIDE-project-exclude project)
-                                   "")))
-                            (setf (projectIDE-project-exclude project) exclude-list)))
-                       ((= counter 3) ;; "^whitelist="
-                        (let ((whitelist
-                               (or (split-string (buffer-substring-no-properties (point) line-end))
-                                   (projectIDE-project-whitelist project)
-                                   "")))
-                            (setf (projectIDE-project-whitelist project) whitelist)))
-                       ((= counter 4) ;; "^inject"
-                        ;; Implement later
-                        (message "[ProjectIDE::Warning] Inject eature not availiable for this version.")))
-                      (setq found t)))
-                (setq counter (1+ counter))
-                (setq keylist (cdr keylist)))))))
-      
-      ;; Return value
-      project)))
+    (concat message-prefix " " message)))
 
 (defun trim-string (string)
   "Return trimmed leading and tailing whitespace from STRING.
@@ -481,6 +407,94 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
     ;; Return value
     t))
 
+(defun projectIDE-find-record-by-path (path)
+  "Return record signature by the given PATH.
+Record is search in projectIDE-runtime-record.
+
+Return
+Type:\t\t projectIDE-record signature or nil
+Descrip.:\t projectIDE-record signature of given PATH.
+\t\t\t nil if PATH not found.
+
+PATH
+Type:\t\t string
+Descript.:\t File or folder path in string."
+  (let ((record (hash-table-values projectIDE-runtime-record))
+        (found nil))
+    (while (and (not found) (car-safe record))
+      (when (string-prefix-p (projectIDE-record-path (car record)) path)
+        (setq found (projectIDE-record-signature (car record))))
+      (setq record (cdr record)))
+    
+    ;; Return value
+    found))
+
+(defun projectIDE-configParser (file)
+  "Parse .projectIDE config FILE.
+Return a projectIDE-project object created by the FILE.
+If .projectIDE is a blank file, return a default projectIDE-project object.
+If there is any problem parsing the .projectIDE file, return nil.
+
+Return
+Type:\t\t projectIDE-project object or nil
+Descrip.:\t Project object created by parsing FILE.
+\t\t\t: nil for any error.
+
+FILE
+Type:\t\t string
+Descrip.:\t Flie path to .projectIDE."
+  (catch 'parse-error
+    (let ((project (make-projectIDE-project)))
+      
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char 1)
+
+        ;; Search keys
+        (while (search-forward-regexp projectIDE-default-config-key-regexp nil t)
+          (save-excursion
+
+            ;; Identify key
+            (beginning-of-line)
+            (let ((found nil)
+                  (line-end (line-end-position))
+                  (keylist projectIDE-default-config-key)
+                  (counter 0))
+              (while (and (not found) (car-safe keylist))
+                (if (search-forward-regexp (car keylist) line-end t)
+                    (progn
+                      (cond
+                       ((= counter 0) ;; "^signature="
+                        (when (projectIDE-project-signature project)
+                          (message "[ProjectIDE::Error] Config file corrupt. 'signature' defined more than once.")
+                          (throw 'parse-error nil))
+                        (setf (projectIDE-project-signature project) (trim-string (buffer-substring-no-properties (point) line-end))))
+                       ((= counter 1) ;; "^name="
+                        (when (projectIDE-project-name project)
+                          (message "[ProjectIDE::Error] Config file corrupt. 'name' defined more than once.")
+                          (throw 'parse-error nil))
+                        (setf (projectIDE-project-name project) (trim-string (buffer-substring-no-properties (point) line-end))))
+                       ((= counter 2) ;; "^exclude="
+                        (let ((exclude-list
+                               (or (split-string (buffer-substring-no-properties (point) line-end))
+                                   (projectIDE-project-exclude project)
+                                   "")))
+                            (setf (projectIDE-project-exclude project) exclude-list)))
+                       ((= counter 3) ;; "^whitelist="
+                        (let ((whitelist
+                               (or (split-string (buffer-substring-no-properties (point) line-end))
+                                   (projectIDE-project-whitelist project)
+                                   "")))
+                            (setf (projectIDE-project-whitelist project) whitelist)))
+                       ((= counter 4) ;; "^inject"
+                        ;; Implement later
+                        (message "[ProjectIDE::Warning] Inject eature not availiable for this version.")))
+                      (setq found t)))
+                (setq counter (1+ counter))
+                (setq keylist (cdr keylist)))))))
+      
+      ;; Return value
+      project)))
 
 (cl-defmacro projectIDE-create (projectType &key templateDir defaultDir document)
   "Create projection creation function."
@@ -538,12 +552,7 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
                ;; Create project structure by template
                (make-directory projectRoot)
                (copy-directory ,templateDir projectRoot nil nil t)
-               ;; Generate .projectIDE file
-               (projectIDE-project-root-creator projectRoot)
-               ;; Create global record
-               (projectIDE-create-record projectConfig)
-               ;; Create individual record
-               (projectIDE-create-cache projectConfig)
+               (projectIDE-new-project projectRoot)
 
                (run-hooks 'projectIDE-global-project-create-hook)
                (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
@@ -563,7 +572,7 @@ Type:\t\t string
 Descrip.:\t Path to project root."
 
   (let ((project-config (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
-     ;; Generate .projectIDE file
+    ;; Generate .projectIDE file
     (projectIDE-project-root-creator path)
     ;; Create global record
     (projectIDE-create-record project-config)
@@ -643,7 +652,7 @@ Write to RECORD file afterward."
           (write-region "" nil file t 'inhibit)
           (fout<<projectIDE file 'cache))))
 
-(defun projectIDE-folder-last-modify (path)
+(defun projectIDE-last-modify (path)
   "Return last modify time from PATH.
 PATH can be a file path or a folder path.
 If PATH does not exist, return nil.
@@ -653,37 +662,49 @@ Type:\t\t string
 Descrip.:\t String of path to file or folder."
   (nth 5 (file-attributes path)))
 
-(defun projectIDE-get-folder-list (projectRoot currentPath)
-  "Return a list of folder (only file name) under PATH.
-If there is no files under PATH, return nil.
+(defun projectIDE-get-folder-list (projectRoot currentPath &optional exclude whitelist)
+  "Combining PROJECTROOT and CURRENTPATH generate a complete current path.
+Return a list of folder (path relative to project root) under current path.
+The returned folder paths includes all its sub-directories.
+If there is no folder under current path, return nil.
 
 Return
-Type:\t\t string list of file names
-Descrip.:\t Return a list of files (only file name) under PATH.
-\t\t\t If there is no files under PATH, return nil.
+Type:\t\t string list of folder paths
+Descrip.:\t Return a list of folder (relative to PROJECTROOT) under CURRENTPATH.
+\t\t\t If there is no files under CURRENTPATH, return nil.
 
-PATH
+PROJECTROOT
 Type:\t\t string
-Descrip.:\t String of path."
+Descrip.:\t String of path to project root.
+
+CURRENTPATH
+Type:\t\t string
+Descrip.:\t String of current searching path.
+\t\t\t It is relative to PROJECTROOT."
   
-  (let ((content-list (directory-files (concat projectRoot currentPath) nil nil 'nosort))
+  (let ((content-list (directory-files (concat projectRoot currentPath) nil nil 'nosort)) ;; A list of content entry relative to current path
         (folder-list nil))
     
     (while (car-safe content-list)
-      (let* ((content (car content-list))
-             (entry (concat projectRoot currentPath content)))
+      (let* ((content (car content-list)) ;; Content relative to current path
+             (entry (concat projectRoot currentPath content))) ;; Complete path of content
         (when (and (file-directory-p entry)
                    (not (or (string= content ".") (string= content ".."))))
-          (setq folder-list (append
-                             folder-list
-                             (projectIDE-get-folder-list projectRoot (file-name-as-directory (concat currentPath content)))))
-          (add-to-list 'folder-list (file-name-as-directory (concat currentPath content)))))
+          (when (and exclude (string-match exclude entry))
+            (unless (and whitelist (string-match whitelist entry))
+              (setq content nil)))
+
+          (when content
+            (setq folder-list (append
+                               folder-list
+                               (projectIDE-get-folder-list projectRoot (file-name-as-directory (concat currentPath content)))))
+            (add-to-list 'folder-list (file-name-as-directory (concat currentPath content))))))
         (setq content-list (cdr content-list)))
 
     ;; Return value
     folder-list))
 
-(defun projectIDE-get-path-files (path)
+(defun projectIDE-get-path-files (path &optional exclude whitelist)
   "Return a list of files (only file name) under PATH.
 If there is no files under PATH, return nil.
 
@@ -701,7 +722,12 @@ Descrip.:\t String of path."
     
     (while (car-safe contents)
       (unless (file-directory-p (car contents))
-        (add-to-list 'filelist (file-name-nondirectory (car contents))))
+        (let ((file (car contents)))
+          (when (and exclude (string-match exclude file))
+            (unless (and whitelist (string-match whitelist file))
+              (setq file nil)))
+          (when file
+            (add-to-list 'filelist (file-name-nondirectory file)))))
       (setq contents (cdr contents)))
 
     ;; Return value
@@ -717,7 +743,6 @@ Descrip.:\t Filename."
   (setq filename1 (downcase filename1)
         filename2 (downcase filename2))
   (string-lessp filename1 filename2))
-
 
 (defun projectIDE-update-project-config (signature &optional ErrorMessage)
   "Update specific project config in projectIDE-opened-project.
@@ -748,7 +773,7 @@ Descrip.: Display error message to minibuffer if it is t."
                                    'projectIDE-update-project-config)
         (throw 'Error nil))
       
-      (let ((project (projectIDE-configParser (projectIDE-config-file))))
+      (let ((project (projectIDE-configParser project-config-file)))
         (unless project
           (projectIDE-message-handle 'Error
                                      (format "Update project config failed. Error reading %s." project-config-file)
@@ -761,7 +786,35 @@ Descrip.: Display error message to minibuffer if it is t."
   ;; Return value
   t)
 
-(defun projectIDE-update-cache (signature &optional ErrorMessage)
+(defun projectIDE-add-projectRoot-prefix (projectRoot list)
+  "Add the PROJECTROOT as a prefix to each entry in the LIST.
+Also, it adjusts the regexp in the list.
+Return a modified LIST.
+
+Return
+Type:\t\t string list
+Descrip.:\t A string list with each item prefixed with PROJECTROOT.
+
+PROJECTROOT
+Type:\t\t string
+Descrip.:\t A string of path.
+
+LIST
+Type:\t\t string list
+Descip.:\t A string list which each entry is to be prefixed."
+
+  (let (return)
+    (while (car-safe list)
+      (add-to-list 'return
+                   (concat projectRoot
+                           (replace-regexp-in-string "\\*" ".*"
+                                                     (replace-regexp-in-string "\\." "\\\\." (car list)))))
+      (setq list (cdr list)))
+
+    ;; Return value
+    return))
+
+(defun projectIDE-update-cache-by-signature (signature &optional ErrorMessage)
   "Update cache for the project provided by SIGNATURE.
 ERRORMESSAGE indicates whether message is displayed to minibuffer
 if there is any error.  Error message is not displayed by default.
@@ -779,13 +832,13 @@ Descrip.: Display error message to minibuffer if it is t."
       (projectIDE-message-handle 'Error
                                  "Update cache terminated due to failure in updating config"
                                  ErrorMessage
-                                 'projectIDE-update-cache)
+                                 'projectIDE-update-cache-by-signature)
       (throw 'Error nil))
 
     ;; Check whether project config has changed.
     ;; If exclude or whitelist has changed, whole project need to be reindexed.
     (let* ((project (gethash signature projectIDE-opened-project))
-           (cache (gethash signature projectIDE-project-cache))
+           (cache (gethash signature projectIDE-runtime-cache))
            (cached-project (projectIDE-cache-project cache)))
       
       (when (not (and (equal (projectIDE-project-exclude project) (projectIDE-project-exclude cached-project))
@@ -797,15 +850,20 @@ Descrip.: Display error message to minibuffer if it is t."
 
     ;; Update folder list
     (let* ((projectRoot (projectIDE-record-path (gethash signature projectIDE-runtime-record)))
-           (cache (gethash signature projectIDE-project-cache))
-           (folder-hash (projectIDE-cache-folder-hash cache))
-           (file-hash (projectIDE-cache-file-hash cache))
-           (cached-folder-list (hash-table-keys folder-hash)))
+           (cache (gethash signature projectIDE-runtime-cache))
+           (project (projectIDE-cache-project cache)) ;; cached project
+           (exclude (projectIDE-concat-regexp-list
+                     (projectIDE-add-projectRoot-prefix projectRoot (projectIDE-project-exclude project)))) ;; cached exclude list
+           (whitelist (projectIDE-concat-regexp-list
+                       (projectIDE-add-projectRoot-prefix projectRoot (projectIDE-project-whitelist project)))) ;; cached whitelist
+           (folder-hash (projectIDE-cache-folder-hash cache)) ;; cached folder hash table
+           (folder-list (hash-table-keys folder-hash)) ;; cached folder list
+           (file-hash (projectIDE-cache-file-hash cache))) ;; cached file hash table
 
-      ;; Check current entry in the hash table first
-      (while (car-safe cached-folder-list)
-        (let* ((folder-name (car cached-folder-list)) ;; folder path relative to projectRoot
-               (folder-path (concat projectRoot (car cached-folder-list)))) ;; complete folder path
+      ;; Check current entries in the hash table first
+      (while (car-safe folder-list)
+        (let* ((folder-name (car folder-list)) ;; folder path relative to projectRoot
+               (folder-path (concat projectRoot (car folder-list)))) ;; complete folder path
           (if (not (and (file-exists-p folder-path) (file-directory-p folder-path)))
               ;; Remove redundant entry
               (progn
@@ -814,160 +872,193 @@ Descrip.: Display error message to minibuffer if it is t."
             ;; Check last modification to update file list
             (when (time-less-p
                    (gethash folder-name folder-hash)
-                   (projectIDE-folder-last-modify folder-path))
-              (puthash folder-name (projectIDE-get-path-files folder-path) file-hash)
-              (puthash folder-name (projectIDE-folder-last-modify folder-path) folder-hash)))))
+                   (projectIDE-last-modify folder-path))
+              (puthash folder-name (projectIDE-get-path-files folder-path exclude whitelist) file-hash)
+              (puthash folder-name (projectIDE-last-modify folder-path) folder-hash)))))
 
       ;; Check any newly added folder
-      (let ((current-folder-list (projectIDE-get-folder-list projectRoot "")))
+      (let ((current-folder-list (projectIDE-get-folder-list projectRoot "" exclude whitelist)))
         (while (car-safe current-folder-list)
           (unless (gethash (car current-folder-list) folder-hash)
-            (puthash (car current-folder-list) (projectIDE-get-path-files (concat projectRoot (car current-folder-list))) file-hash)
-            (puthash (car current-folder-list) (projectIDE-folder-last-modify (concat projectRoot (car current-folder-list))) folder-hash))
-          (setq current-folder-list (cdr current-folder-list)))))))
+            (puthash (car current-folder-list)
+                     (projectIDE-get-path-files (concat projectRoot (car current-folder-list)) exclude whitelist)
+                     file-hash)
+            (puthash (car current-folder-list) (projectIDE-last-modify (concat projectRoot (car current-folder-list))) folder-hash))
+          (setq current-folder-list (cdr current-folder-list))))))
 
+  (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) (gethash signature projectIDE-runtime-cache)))
 
+  
 (defun projectIDE-index-project (path)
   "This is an interactive function to let user index a project.
 PATH is the project root."
   (interactive (list (read-directory-name "Please choose the project root: "
-                                          (file-name-directory buffer-file-name))))
-  ;; Create .projectIDE under path if not exist
-  (unless (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
-    (projectIDE-project-root-creator path)
-    (projectIDE-create-record (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
-    (projectIDE-create-cache (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
+                                          (file-name-directory (or buffer-file-name user-emacs-directory)))))
 
-  ;; At this point, there must be a .projectIDE under path
-  ;; It may or may not contain signature
   
-  (let* ((projectIDE-rootfile (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
-         (project (projectIDE-configParser projectIDE-rootfile))
-         (signature (projectIDE-project-signature project)))
-    ;; Create signature if .projectIDE does not contain
-    (unless signature
-      (projectIDE-project-root-creator path)
-      (setq project (projectIDE-configParser projectIDE-rootfile))
-      (setq signature (projectIDE-project-signature project)))
+  ;; Index project
+  (if (and (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
+           (projectIDE-project-signature (projectIDE-configParser (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))))
+      (if (yes-or-no-p
+           (concat (projectIDE-message-handle 'Warning
+                                              (format ".projectIDE with signature found at %s" path)
+                                              nil 'projectIDE-index-project)
+                   "\nChoose yes if you want to create a new signature for this project.
+Choose no if you want to retain current signature.
+Press C-g to cancel the operation."))
+          (projectIDE-new-project (file-name-as-directory path))
+        (projectIDE-create-record (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
+        (projectIDE-create-cache (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
+    (projectIDE-new-project (file-name-as-directory path)))
+  
+  ;; Scan through buffers to check whether they are memeber of newly indexed project
+  (let ((buffers (buffer-list)))
+    (while (car-safe buffers)
+      (projectIDE-identify-project (car buffers))
+      (setq buffers (cdr buffers))))
 
-    (projectIDE-create-record projectIDE-rootfile)
+    (message "FUCKFUCKFUCKFUCK")
+  (message path)
 
-    (unless (file-exists-p (concat PROJECTIDE-CACHE-PATH signature))
-            (projectIDE-create-cache projectIDE-rootfile))
-    
-    
-    
-    (if (projectIDE-project-signature project)
-        ;; if .projectIDE found under path contains signature
-        (progn
-          )
-      ;; found .projectIDE without signature under path
-      (progn
-                (projectIDE-create-record projectIDE-rootfile)
-        (projectIDE-create-cache projectIDE-rootfile)
-        (message "[ProjectIDE::Info]\nProject Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
-                 (file-name-nondirectory (directory-file-name (file-name-directory projectIDE-rootfile))) path))))
-
-    ;; No .projectIDE under path, create it
-    
-  (buffer-list)
-  )
+  (projectIDE-message-handle 'Info
+                             (format "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
+                                     (projectIDE-project-name
+                                      (projectIDE-configParser (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
+                                     path)
+                             t
+                             'projectIDE-index-project))
 
 
-(defun projectIDE-find-file-check ()
-  "This function is added to find file hook.
-When opening a file, projectIDE will check
-1) whether it is under current opened project
-2) whether it is in global project record
-3) whether there is a .projectIDE config file
-so as to locate and index a project."
+(defun projectIDE-identify-project (&optional buffer)
+  "This function check whether BUFFER is a indexed project.
+If it is a indexed project, it ensures
+1) it is under opened project
+2) it is under opened buffer in project cache
+If BUFFER is not provided, current buffer is used instead.
+
+BUFFER
+Type\t\t: buffer
+Descrip.:\t The buffer being identified."
+  
   (let ((found nil)
         (signature nil))
 
-    (let ((current-opened-project-signatures (hash-table-keys projectIDE-opened-project)))
-
-
+    (let ((opened-project-signatures (hash-table-keys projectIDE-opened-project)))
       ;; Find project in current opened project
       ;; If found set found to t
-      (while (and (not found) (car-safe current-opened-project-signatures))
+      (while (and (not found) (buffer-file-name buffer) (car-safe opened-project-signatures))
         (when (string-prefix-p
                (projectIDE-record-path
-                (gethash (car current-opened-project-signatures) projectIDE-runtime-record)) ;; get RECORD from current opened project
-               buffer-file-name)
-          (setq signature (car current-opened-project-signatures))
+                (gethash (car opened-project-signatures) projectIDE-runtime-record)) ;; get RECORD from current opened project
+               (buffer-file-name buffer))
+          (setq signature (car opened-project-signatures))
           (setq found t))
-        (setq current-opened-project-signatures (cdr current-opened-project-signatures))))
-
+        (setq opened-project-signatures (cdr opened-project-signatures))))
 
     ;; Search in project RECORD
     ;; If found set found to t
     ;; And add project to projectIDE-opened-project
     (unless found
-      (setq signature (projectIDE-find-record-by-path buffer-file-name))
+      (when (buffer-file-name buffer)
+        (setq signature (projectIDE-find-record-by-path (buffer-file-name buffer))))
       (when signature
-        ;; Add project to current opened project
-        (puthash signature ;; key: signature
-                 (projectIDE-configParser ;; value: project object
-                  (concat ;; get .projectIDE full file path
-                   (projectIDE-record-path (gethash signature projectIDE-runtime-record))
-                   PROJECTIDE-PROJECTROOT-IDENTIFIER))
-                 projectIDE-opened-project) ;; table
         (setq found t)))
-
     
     ;; Search .projectIDE up directory
     ;; If found set found to t,
     ;; add project to projectIDE-opened-project
     ;; and add current buffer to current opened buffer
-    (unless found
+    (unless (or buffer found)
       (let ((search-countdown projectIDE-config-file-search-up-level)
             (path (file-name-directory (buffer-file-name))))
         (while (and (not found) (> search-countdown 0))
           (when (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
-            (let* ((projectIDE-rootfile (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
-                   (project (projectIDE-configParser projectIDE-rootfile)))
+            (let* ((projectRoot (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
+                   (project (projectIDE-configParser projectRoot)))
               (if (projectIDE-project-signature project)
                   ;; found .projectIDE with signature
                   (progn
                     (setq signature (projectIDE-project-signature project))
-                    (projectIDE-create-record projectIDE-rootfile)
+                    (projectIDE-create-record projectRoot)
                     (unless (file-exists-p (concat PROJECTIDE-CACHE-PATH signature))
-                      (projectIDE-create-cache projectIDE-rootfile))
-                    (puthash signature project projectIDE-opened-project)
+                      (projectIDE-create-cache projectRoot))
                     (setq found t))
                 ;; found .projectIDE without signature
-                (if (y-or-n-p (format "[ProjectIDE::Info]\n.projectIDE root file found at %s.\nMake this as project root and index the project? "
-                                      path))
+                (if (y-or-n-p
+                     (projectIDE-message-handle
+                      'Info
+                      (format ".projectIDE root file found at %s.\nMake this path as project root and index the project? " path)
+                      nil
+                      'projectIDE-identify-project))
                     (progn
-                      (projectIDE-project-root-creator path)
-                      (projectIDE-create-record projectIDE-rootfile)
-                      (projectIDE-create-cache projectIDE-rootfile)
-                      (setq project (projectIDE-configParser projectIDE-rootfile))
-                      (setq signature (projectIDE-project-signature project))
-                      (puthash signature project projectIDE-opened-project)
+                      (projectIDE-new-project path)
+                      (setq signature (projectIDE-find-record-by-path (buffer-file-name buffer)))
                       (setq found t)
-                      (message "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
-                                (file-name-nondirectory (directory-file-name (file-name-directory projectIDE-rootfile))) path))
-                  (message "[ProjectIDE::Info] File opened without indexing.")
+                      (projectIDE-message-handle
+                       'Info
+                       (format "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
+                               (file-name-nondirectory (directory-file-name (file-name-directory projectRoot))) path)
+                       t
+                       'projectIDE-identify-project))
+                  (projectIDE-message-handle
+                   'Info
+                   "File opened without indexing."
+                   t
+                   'projectIDE-identify-project)
                   (setq search-countdown -1)))))
           
-              (setq search-countdown (1- search-countdown))
-              (setq path (file-name-directory (directory-file-name path))))))
+          (setq search-countdown (1- search-countdown))
+          (setq path (file-name-directory (directory-file-name path))))))
 
-    
-    (when found
-      ;; Add current buffer to opened buffer
-      (let* ((opened-buffer-list (projectIDE-project-opened-buffer
-                                  (gethash signature projectIDE-opened-project))))
-        (setf
-         ;; opened buffer field
-         (projectIDE-project-opened-buffer
-          (gethash signature projectIDE-opened-project)) ;; get a project object
-         (add-to-list 'opened-buffer-list buffer-file-name)))
+        
+        (when found
+          (let ((project (projectIDE-configParser
+                          (concat (projectIDE-record-path (gethash signature projectIDE-runtime-record)) PROJECTIDE-PROJECTROOT-IDENTIFIER)))
+                (cache))
 
-      (puthash (current-buffer) signature projectIDE-buffer-trace)
-      (message "[ProjectIDE::Info] Open indexed file."))))
+            ;; Add to opened project if it is not there yet
+            (unless (gethash signature projectIDE-opened-project)
+              (puthash signature project projectIDE-opened-project))
 
+            ;; Create project cache if it is not ther yet
+            (unless (gethash signature projectIDE-runtime-cache)
+              (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache)
+              (puthash signature cache projectIDE-runtime-cache)))
+          
+          (let ((project (gethash signature projectIDE-opened-project))
+                (cache (gethash signature projectIDE-runtime-cache)))
+            ;; Add to opened buffer in project cache
+            (setf (projectIDE-cache-opened-buffer cache) (projectIDE-add-to-list (projectIDE-cache-opened-buffer cache) (buffer-file-name buffer)))
+            ;; Add to buffer-trace
+            (puthash (or buffer (current-buffer)) signature projectIDE-buffer-trace))
+
+          (unless buffer
+            (projectIDE-message-handle
+             'Info
+             (format "Opened [%s] file" (projectIDE-project-name (gethash signature projectIDE-opened-project)))
+             t
+             'projectIDE-identify-project)))))
+
+  
+(defun projectIDE-add-to-list (list element)
+  "Wrapper to `add-to-list'(LIST ELEMENT).
+Add ELEMENT to  LIST if it isn't there yet.
+This function does not modify the original list.
+Instead, it returns a new list.
+In addition, it accepts non-symbol LIST.
+
+Return
+Type:\t\t list
+Descrip.:\t New list with ELEMENT add to LIST
+
+LIST
+Type:\t\t list of any type
+Descrip.:\t List to be checked and appended to.
+
+ELEMENT
+Type:\t\t same type of LIST element
+Descrip.:\t Add to LIST if ELEMENT isn't there yet."
+  (add-to-list 'list element))
   
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
@@ -987,11 +1078,18 @@ so as to locate and index a project."
         (unless projectIDE-runtime-record
           (setq projectIDE-runtime-record (make-hash-table :test 'equal :size 40)))
         (setq projectIDE-opened-project (make-hash-table :test 'equal :size 20))
+        (setq projectIDE-runtime-cache (make-hash-table :test 'equal :size 20))
         (setq projectIDE-buffer-trace (make-hash-table))
-        (message "[ProjectIDE::Info] projectIDE starts successfully.")
-        (add-hook 'find-file-hook 'projectIDE-find-file-check)
+        (projectIDE-message-handle 'Info
+                                   "projectIDE starts successfully."
+                                   t
+                                   'projectIDE-initialize)
+        (add-hook 'find-file-hook 'projectIDE-identify-project)
         (setq projectIDE-p t))
-    (message "[ProjectIDE::Error] projectIDE starts fail."))
+    (projectIDE-message-handle 'Error
+                               (format "projectIDE starts fail. Unable to read record file at %s" PROJECTIDE-RECORD-FILE)
+                               t
+                               'projectIDE-initialize))
 ;; Return value
   projectIDE-p)
 
