@@ -181,16 +181,16 @@ Descrip.:\t A string list of regexp."
   "Combine the projectIDE-default-exclude.")
 
 (defcustom projectIDE-default-exclude
-  '("*.idea*"
-    "*.eunit*"
-    "*.git*"
-    "*.hg*"
-    "*.fslckout*"
-    "*.bzr*"
-    "*_darcs*"
-    "*.tox*"
-    "*.svn*"
-    "*.stack-work*")
+  '("*.idea"
+    "*.eunit"
+    "*.git"
+    "*.hg"
+    "*.fslckout"
+    "*.bzr"
+    "*_darcs"
+    "*.tox"
+    "*.svn"
+    "*.stack-work")
   "A list of exclude items by projectIDE."
   :group 'projecIDE-config-file
   :type '(repeat string))
@@ -231,8 +231,8 @@ Descrip.:\t A string list of regexp."
 
 (cl-defstruct projectIDE-cache
   project                                      ;; project-project object
-  folder-hash                                  ;; hash table. key: path  value: last-modify
-  file-hash                                    ;; hash table. key: path  value: file list
+  (folder-hash (make-hash-table :test 'equal)) ;; hash table. key: path  value: last-modify
+  (file-hash (make-hash-table :test 'equal))   ;; hash table. key: path  value: file list
   opened-buffer                                ;; string in terms of file path
   association                                  ;; hash table. key: filename value: file path list
   )
@@ -475,26 +475,32 @@ Descrip.:\t Flie path to .projectIDE."
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-name project) (trim-string (buffer-substring-no-properties (point) line-end))))
                        ((= counter 2) ;; "^exclude="
-                        (let ((exclude-list
-                               (or (split-string (buffer-substring-no-properties (point) line-end))
-                                   (projectIDE-project-exclude project)
-                                   "")))
-                            (setf (projectIDE-project-exclude project) exclude-list)))
+                        (let ((exclude-list (split-string (buffer-substring-no-properties (point) line-end))))
+                          (setf (projectIDE-project-exclude project)
+                                (projectIDE-append-list (projectIDE-project-exclude project) exclude-list))))
                        ((= counter 3) ;; "^whitelist="
-                        (let ((whitelist
-                               (or (split-string (buffer-substring-no-properties (point) line-end))
-                                   (projectIDE-project-whitelist project)
-                                   "")))
-                            (setf (projectIDE-project-whitelist project) whitelist)))
+                        (let ((whitelist (split-string (buffer-substring-no-properties (point) line-end))))
+                          (setf (projectIDE-project-whitelist project)
+                                (projectIDE-append-list (projectIDE-project-whitelist project) whitelist))))
                        ((= counter 4) ;; "^inject"
                         ;; Implement later
                         (message "[ProjectIDE::Warning] Inject eature not availiable for this version.")))
                       (setq found t)))
                 (setq counter (1+ counter))
                 (setq keylist (cdr keylist)))))))
+
+      (unless (projectIDE-project-exclude project)
+        (setf (projectIDE-project-exclude project) projectIDE-default-exclude))
+
+      (unless (projectIDE-project-whitelist project)
+        (setf (projectIDE-project-whitelist project) projectIDE-default-whitelist))
       
       ;; Return value
       project)))
+
+(defun projectIDE-append-list (list1 list2)
+  (let ((newlist (append list1 list2)))
+    (cl-remove-duplicates newlist :test 'equal)))
 
 (cl-defmacro projectIDE-create (projectType &key templateDir defaultDir document)
   "Create projection creation function."
@@ -624,11 +630,15 @@ Descrip.:\t Path to project root."
         (setq name (file-name-nondirectory (directory-file-name (file-name-directory file))))
         (insert "name=" name "\n"))
       ;; Handle exclude
-      (unless exclude
-        (insert "exclude=" (mapconcat 'identity (projectIDE-project-exclude project) " ") "\n"))
+      (insert "exclude=" (mapconcat 'identity (projectIDE-project-exclude project) " ") "\n")
+      (save-excursion
+        (while (search-forward-regexp "^exclude=" nil t)
+          (delete-region (line-beginning-position) (line-end-position))))
       ;; Handle whitelist
-      (unless whitelist
-        (insert "whitelist=" (mapconcat 'identity (projectIDE-project-whitelist project) " ") "\n")))))
+      (insert "whitelist=" (mapconcat 'identity (projectIDE-project-whitelist project) " ") "\n")
+      (save-excursion
+        (while (search-forward-regexp "^whitelist=" nil t)
+          (delete-region (line-beginning-position) (line-end-position)))))))
 
 (defun projectIDE-create-record (configfile)
   "Create projectIDE-record by reading CONFIGFILE.
@@ -699,7 +709,10 @@ Descrip.:\t String of current searching path.
                                folder-list
                                (projectIDE-get-folder-list projectRoot (file-name-as-directory (concat currentPath content)))))
             (add-to-list 'folder-list (file-name-as-directory (concat currentPath content))))))
-        (setq content-list (cdr content-list)))
+      (setq content-list (cdr content-list)))
+
+    (when (equal currentPath "")
+      (add-to-list 'folder-list ""))
 
     ;; Return value
     folder-list))
@@ -808,11 +821,22 @@ Descip.:\t A string list which each entry is to be prefixed."
       (add-to-list 'return
                    (concat projectRoot
                            (replace-regexp-in-string "\\*" ".*"
-                                                     (replace-regexp-in-string "\\." "\\\\." (car list)))))
+                                                     (replace-regexp-in-string "\\." "\\\\." (car list)))
+                           "\\'"))
       (setq list (cdr list)))
 
     ;; Return value
     return))
+
+(defun projectIDE-update-cache ()
+  (interactive)
+  (let ((signature (gethash (current-buffer) projectIDE-buffer-trace)))
+    (if signature
+        (projectIDE-update-cache-by-signature signature t)
+      (projectIDE-message-handle 'Warning
+                                 "Current buffer not in project record"
+                                 t
+                                 'projectIDE-update-cache))))
 
 (defun projectIDE-update-cache-by-signature (signature &optional ErrorMessage)
   "Update cache for the project provided by SIGNATURE.
@@ -835,20 +859,22 @@ Descrip.: Display error message to minibuffer if it is t."
                                  'projectIDE-update-cache-by-signature)
       (throw 'Error nil))
 
-    ;; Check whether project config has changed.
-    ;; If exclude or whitelist has changed, whole project need to be reindexed.
+    
+    ;; Check whether project config has changed
+    ;; If exclude or whitelist has been changed, whole project need to be reindexed
+    ;; Update project object in cache anyway
     (let* ((project (gethash signature projectIDE-opened-project))
            (cache (gethash signature projectIDE-runtime-cache))
            (cached-project (projectIDE-cache-project cache)))
-      
       (when (not (and (equal (projectIDE-project-exclude project) (projectIDE-project-exclude cached-project))
                       (equal (projectIDE-project-whitelist project) (projectIDE-project-whitelist cached-project))))
         (clrhash (projectIDE-cache-folder-hash cache))
         (clrhash (projectIDE-cache-file-hash cache)))
-
       (setf (projectIDE-cache-project cache) project))
 
-    ;; Update folder list
+    ;; Update folder and file list
+    ;; Check current folder list for any change or removal first
+    ;; Afterward comparing to the system folder list to see if new folder added
     (let* ((projectRoot (projectIDE-record-path (gethash signature projectIDE-runtime-record)))
            (cache (gethash signature projectIDE-runtime-cache))
            (project (projectIDE-cache-project cache)) ;; cached project
@@ -860,7 +886,9 @@ Descrip.: Display error message to minibuffer if it is t."
            (folder-list (hash-table-keys folder-hash)) ;; cached folder list
            (file-hash (projectIDE-cache-file-hash cache))) ;; cached file hash table
 
-      ;; Check current entries in the hash table first
+      ;; Check current entries in the folder hash table first
+      ;; Update the file list if modification time has been changed
+      ;; Remove the folder and file list if folder no longer exists in the system 
       (while (car-safe folder-list)
         (let* ((folder-name (car folder-list)) ;; folder path relative to projectRoot
                (folder-path (concat projectRoot (car folder-list)))) ;; complete folder path
@@ -874,7 +902,8 @@ Descrip.: Display error message to minibuffer if it is t."
                    (gethash folder-name folder-hash)
                    (projectIDE-last-modify folder-path))
               (puthash folder-name (projectIDE-get-path-files folder-path exclude whitelist) file-hash)
-              (puthash folder-name (projectIDE-last-modify folder-path) folder-hash)))))
+              (puthash folder-name (projectIDE-last-modify folder-path) folder-hash))))
+        (setq folder-list (cdr folder-list)))
 
       ;; Check any newly added folder
       (let ((current-folder-list (projectIDE-get-folder-list projectRoot "" exclude whitelist)))
@@ -886,9 +915,9 @@ Descrip.: Display error message to minibuffer if it is t."
             (puthash (car current-folder-list) (projectIDE-last-modify (concat projectRoot (car current-folder-list))) folder-hash))
           (setq current-folder-list (cdr current-folder-list))))))
 
-  (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) (gethash signature projectIDE-runtime-cache)))
+(let ((cache (gethash signature projectIDE-runtime-cache)))
+  (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache)))
 
-  
 (defun projectIDE-index-project (path)
   "This is an interactive function to let user index a project.
 PATH is the project root."
@@ -916,9 +945,7 @@ Press C-g to cancel the operation."))
     (while (car-safe buffers)
       (projectIDE-identify-project (car buffers))
       (setq buffers (cdr buffers))))
-
-    (message "FUCKFUCKFUCKFUCK")
-  (message path)
+  
 
   (projectIDE-message-handle 'Info
                              (format "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
