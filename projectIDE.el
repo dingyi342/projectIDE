@@ -88,6 +88,21 @@
   (file-name-as-directory (concat projectIDE-database-path "CACHE"))
   "Type: string\nFolder path to individual project record.")
 
+(defcustom projectIDE-completion-system
+  (or (and (fboundp 'helm) 'helm)
+      (and (fboundp 'ivy-completing-read) 'ivy)
+      (and (fboundp 'ido-completing-read) 'ido)
+      (and (fboundp 'grizzl-completing-read) 'grizzl)
+      'default)
+  "The completion system to be used by projectIDE."
+  :type '(radio
+          (const :tag "Ido" ido)
+          (const :tag "Ivy" ivy)
+          (const :tag "Grizzl" grizzl)
+          (const :tag "Helm" helm)
+          (const :tag "Default" default))
+  :group 'projectIDE-global)
+
 ;; Runtime Variable
 (defvar projectIDE-p nil
   "Indicate whether projectIDE is running.
@@ -456,6 +471,19 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
     ;; Return value
     t))
 
+(defun projectIDE-signature-generator ()
+  "Generate and return a projectIDE signature.
+
+Return
+Type:\t\t string
+Descrip.:\t A signature string."
+  
+  (let ((return "")
+        (charset "1234567890abcdefghijklmnopqrstyvwxyzABCDEFGHIJKLMNOPQRSTYVWXYZ"))
+    (dotimes (i 32)
+      (setq return (concat return (char-to-string (elt charset (random (length charset)))))))
+    return))
+
 (defun projectIDE-find-record-by-path (path)
   "Return record signature by the given PATH.
 Record is search in projectIDE-runtime-record.
@@ -676,9 +704,7 @@ Descrip.:\t Path to project root."
 
   (let* ((file (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
          (project (projectIDE-configParser file)) ;; don't use projectIDE-make-projectIDE-project
-         (signature (concat (number-to-string (random most-positive-fixnum))
-                            (number-to-string (random most-positive-fixnum))
-                            (number-to-string (random most-positive-fixnum))))
+         (signature (projectIDE-signature-generator))
          (name (projectIDE-project-name project))
          (exclude (projectIDE-project-exclude project))
          (whitelist (projectIDE-project-whitelist project)))
@@ -1065,7 +1091,6 @@ Press C-g to cancel the operation."))
                              t
                              'projectIDE-index-project))
 
-
 (defun projectIDE-identify-project (&optional buffer)
   "This function check whether BUFFER is a indexed project.
 If it is a indexed project, it ensures
@@ -1191,6 +1216,94 @@ This function should be added to `kill-buffer-hook'"
         (remhash signature projectIDE-opened-project)
         (remhash signature projectIDE-runtime-cache)))))
 
+(defun projectIDE-get-project-files (&optional signature)
+  "Return the files list of project for given SIGNATURE.
+If SIGNATURE is not provided, try to get signature from current buffer.
+
+Return
+Type:\t\t string list
+Descrip.:\t List of file path.
+
+Signature
+Type:\t\t string
+Descrip.:\t String of projectIDE signature."
+
+  (let ((tempOpen nil))
+    (if signature
+      (if (not )))))
+
+(defun projectIDE-get-project-list ()
+  "Return a list of project from projectIDE-runtime-record."
+  )
+
+(defun projectIDE-open-project ())
+;; (completing-read "Chosse this " projectIDE-runtime-record)
+;; (projectIDE-prompt "Chosse this " '("a" "b" "c"))
+
+(defun projectIDE-prompt (prompt choices &optional initial-input)
+  "Create a PROMPT to choose from CHOICES which is a list.
+Return the selected result.
+
+Return
+Type:\t\t type of the CHOICES list
+Descrip.:\t Return the user choice.
+
+PROMPT
+Type:\t\t string
+Descrip.: Prompt message.
+
+CHOICES
+Type:\t\t list of any type
+Descrip.: A list of choices to let user choose.
+
+INITIAL-INPUT
+Type:\t\t string
+Descrip.:\t Initial input for the prompt."
+    (cond
+     ;; ido
+     ((eq projectIDE-completion-system 'ido)
+      (ido-completing-read prompt choices nil nil initial-input))
+
+     ;; helm
+     ((eq projectIDE-completion-system 'helm)
+      (if (fboundp 'helm-comp-read)
+          (helm-comp-read prompt choices
+                          :initial-input initial-input
+                          :candidates-in-buffer t
+                          :must-match 'confirm)
+        (projectIDE-message-handle 'Warning
+                                   "Problem implementing helm completion. Please check `projectIDE-completion-system'.
+projectIDE will use default completion instead."
+                                   t
+                                   'projectIDE-prompt)
+        (completing-read prompt choices nil nil initial-input)))
+
+     ;; grizzl
+     ((eq projectIDE-completion-system 'grizzl)
+      (if (and (fboundp 'grizzl-completing-read)
+               (fboundp 'grizzl-make-index))
+          (grizzl-completing-read prompt (grizzl-make-index choices))
+        (projectIDE-message-handle 'Warning
+                                   "Problem implementing grizzl completion. Please check `projectIDE-completion-system'.
+projectIDE will use default completion instead."
+                                   t
+                                   'projectIDE-prompt)
+        (completing-read prompt choices nil nil initial-input)))
+
+     ;; ivy
+     ((eq projectIDE-completion-system 'ivy)
+      (if (fboundp 'ivy-completing-read)
+          (ivy-completing-read prompt choices nil nil initial-input)
+        (projectIDE-message-handle 'Warning
+                                   "Problem implementing ivy completion. Please check `projectIDE-completion-system'.
+projectIDE will use default completion instead."
+                                   t
+                                   'projectIDE-prompt)
+        (completing-read prompt choices nil nil initial-input)))
+
+     ;; default
+     (t (completing-read prompt choices nil nil initial-input))))
+
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
   (interactive)
@@ -1228,9 +1341,10 @@ This function should be added to `kill-buffer-hook'"
 ;; Return value
   projectIDE-p)
 
-;;; Debug function
+;;; Debug
 (defun projectIDE-print-variable (var)
-  "Insert VAR at bottom of current buffer."
+  "Insert VAR at bottom of current buffer.
+Only for debug purpose."
   (goto-char (point-max))
   (insert "\n\n")
   (let ((beg (point)))
