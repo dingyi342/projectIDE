@@ -935,28 +935,28 @@ In simple term, it updates folders and files of the project."
     (if signature
         (projectIDE-update-cache-backend signature t)
       (projectIDE-message-handle 'Warning
-                                 "Current buffer not in project record"
+                                 "Current buffer not in project record."
                                  t
                                  'projectIDE-update-cache))))
 
-(defun projectIDE-update-cache-backend (signature &optional ErrorMessage)
+(defun projectIDE-update-cache-backend (signature &optional Message)
   "Update cache for the project provided by SIGNATURE.
-ERRORMESSAGE indicates whether message is displayed to minibuffer
+MESSAGE indicates whether message is displayed to minibuffer
 if there is any error.  Error message is not displayed by default.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t String of number of signature.
 
-ERRORMESSAGE
+MESSAGE
 Type:\t\t bool
-Descrip.: Display error message to minibuffer if it is t."
+Descrip.: Display message to minibuffer if it is t."
 
   (catch 'Error
     (unless (projectIDE-update-project-config signature)
       (projectIDE-message-handle 'Error
                                  "Update cache terminated due to failure in updating config"
-                                 ErrorMessage
+                                 Message
                                  'projectIDE-update-cache-backend)
       (throw 'Error nil))
 
@@ -1017,7 +1017,12 @@ Descrip.: Display error message to minibuffer if it is t."
           (setq current-folder-list (cdr current-folder-list))))))
 
   (let ((cache (gethash signature projectIDE-runtime-cache)))
-    (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache)))
+    (when (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache)
+      (projectIDE-message-handle 'Info
+                                 (format "Project cache for '%s' updated successfully."
+                                         (projectIDE-project-name (projectIDE-cache-project cache)))
+                                 Message
+                                 'projectIDE-update-cache-backend))))
 
 (defun projectIDE-index-project (path)
   "This is an interactive function to let user indexing a project.
@@ -1167,9 +1172,24 @@ Descrip.:\t The buffer being identified."
           (unless buffer
             (projectIDE-message-handle
              'Info
-             (format "Opened [%s] file" (projectIDE-project-name (gethash signature projectIDE-opened-project)))
+             (format "Opened file from project '%s'" (projectIDE-project-name (gethash signature projectIDE-opened-project)))
              t
              'projectIDE-identify-project)))))
+
+(defun projectIDE-kill-project-buffer ()
+  "Remove opened-buffer from cache when killing a project buffer.
+This function should be added to `kill-buffer-hook'"
+  (when (gethash (current-buffer) projectIDE-buffer-trace)
+    (let* ((currentBuffer (current-buffer))
+           (signature (gethash currentBuffer projectIDE-buffer-trace))
+           (cache (gethash signature projectIDE-runtime-cache))
+           (opened-buffer (projectIDE-cache-opened-buffer cache)))
+      (remhash currentBuffer projectIDE-buffer-trace)
+      (if (> (length opened-buffer) 1)
+          (setf (projectIDE-cache-opened-buffer cache) (remove (buffer-file-name currentBuffer) opened-buffer))
+        (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache)
+        (remhash signature projectIDE-opened-project)
+        (remhash signature projectIDE-runtime-cache)))))
 
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
@@ -1199,6 +1219,7 @@ Descrip.:\t The buffer being identified."
                                    t
                                    'projectIDE-initialize)
         (add-hook 'find-file-hook 'projectIDE-identify-project)
+        (add-hook 'kill-buffer-hook 'projectIDE-kill-project-buffer)
         (setq projectIDE-p t))
     (projectIDE-message-handle 'Error
                                (format "projectIDE starts fail. Unable to read record file at %s" PROJECTIDE-RECORD-FILE)
@@ -1206,6 +1227,16 @@ Descrip.:\t The buffer being identified."
                                'projectIDE-initialize))
 ;; Return value
   projectIDE-p)
+
+;;; Debug function
+(defun projectIDE-print-variable (var)
+  "Insert VAR at bottom of current buffer."
+  (goto-char (point-max))
+  (insert "\n\n")
+  (let ((beg (point)))
+    (save-excursion (insert (pp var))
+                    (comment-region beg (point))))
+  (message "done"))
 
 (provide 'projectIDE)
 ;;; projectIDE.el ends here
