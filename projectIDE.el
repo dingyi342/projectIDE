@@ -70,8 +70,8 @@
   (concat projectIDE-database-path "RECORD")
   "Type: string\nFilename for project record.")
 
-(defconst PROJECTIDE-LOG-FILE
-  (concat projectIDE-database-path "log")
+(defconst PROJECTIDE-LOG-PATH
+  (file-name-as-directory (concat projectIDE-database-path "LOG"))
   "Type: string\nFilename for projectIDE log file.")
 
 (defcustom projectIDE-log-level 2
@@ -112,8 +112,7 @@ Never attempt to modify it directly.")
   ;; key: signature
   ;; value: project cache object
   "Individual project cache.
-Never attempt to modify it directly."
-  )
+Never attempt to modify it directly.")
 
 (defvar projectIDE-buffer-trace
   ;; hash table
@@ -158,7 +157,7 @@ Other values ask for the confirmation."
   "Default projectIDE config file keyword.
 Must not change.")
 
-(defun projectIDE-concat-regexp-list (list)
+(defun projectIDE-concat-regexp (list)
   "Return a single regexp string from a LIST of separated regexp.
 
 Return
@@ -176,8 +175,8 @@ Descrip.:\t A string list of regexp."
           (setq regexp (concat val "\\|" regexp))
         (setq regexp val)))))
 
-(defvar projectIDE-default-config-key-regexp
-  (projectIDE-concat-regexp-list projectIDE-default-config-key)
+(defvar projectIDE-default-config-key-regexp-string
+  (projectIDE-concat-regexp projectIDE-default-config-key)
   "Combine the projectIDE-default-exclude.")
 
 (defcustom projectIDE-default-exclude
@@ -243,7 +242,6 @@ Descrip.:\t A string list of regexp."
   create-date
   last-modify)
 
-
 (defun projectIDE-message-handle (type message &optional print function)
   "This funtion handle messages from projectIDE for debug purpose.
 TYPE specifies message type.  It can be 'Info, 'Warning or 'Error.
@@ -272,7 +270,8 @@ TYpe:\t\t symbol
 Descrip.: Function producing the message.  Just for debug purpose."
 
   (let ((message-prefix nil)
-        (time (format-time-string "%Y%m%d-%R"))
+        (Day (format-time-string "%Y%m%d"))
+        (Time (format-time-string "%R"))
         (logtype nil))
     
     (cond ((eq type 'Error)
@@ -289,13 +288,14 @@ Descrip.: Function producing the message.  Just for debug purpose."
       (message (concat message-prefix " " message)))
 
     (when (and logtype (>= logtype projectIDE-log-level))
-      (write-region
-       (concat time "\t"
-               message-prefix "\t"
-               (when (symbolp function)
-                 (concat (symbol-name function) ": "))
-               message "\n")
-       nil PROJECTIDE-LOG-FILE t 'inhibit))
+      (let ((message (replace-regexp-in-string "\n" "\n\t\t\t\t\t" message)))
+        (write-region
+         (concat Day "-" Time "\t"
+                 message-prefix "\t"
+                 (when (symbolp function)
+                   (concat (symbol-name function) ": "))
+                 message "\n")
+         nil (concat PROJECTIDE-LOG-PATH Day ".log") t 'inhibit)))
 
     ;; Return value
     (concat message-prefix " " message)))
@@ -320,6 +320,39 @@ Descrip.:\t String to be trimmed."
     (if (string= return-string "")
         nil
       return-string)))
+
+(defun projectIDE-add-to-list (list element)
+  "Wrapper to `add-to-list'(LIST ELEMENT).
+Add ELEMENT to  LIST if it isn't there yet.
+This function does not modify the original list.
+Instead, it returns a new list.
+In addition, it accepts non-symbol LIST.
+
+Return
+Type:\t\t list
+Descrip.:\t New list with ELEMENT add to LIST
+
+LIST
+Type:\t\t list of any type
+Descrip.:\t List to be checked and appended to.
+
+ELEMENT
+Type:\t\t same type of LIST element
+Descrip.:\t Add to LIST if ELEMENT isn't there yet."
+  (add-to-list 'list element))
+
+(defun projectIDE-append-list (list1 list2)
+  "Return a combined list of LIST1 and LIST2 and prevent duplication.
+
+Return
+Type:\t\t list
+Descrip.:\t Combined list of LIST1 and LIST2.
+
+LIST1/LIST2
+Type:\t list of any type
+Descrip.:\t List to be combined."
+  (let ((newlist (append list1 list2)))
+    (cl-remove-duplicates newlist :test 'equal)))
 
 (defun fout<<projectIDE (file data)
        "Write FILE with DATA.
@@ -362,10 +395,18 @@ Descrip.:\t Serialize data holds by symbol."
                          (file-directory-p parentPath))
                  (write-region "" nil file nil 'inhibit nil 'exc1))
                (unless (and (file-exists-p file) (file-writable-p file))
+                 (projectIDE-message-handle 'Error
+                                            (format "Unable to write to %s." file)
+                                            nil
+                                            'fout<<projectIDE)
                  (throw 'Error nil))))
 
            ;; Check symbol exists
            (unless (boundp data)
+             (projectIDE-message-handle 'Error
+                                        (format "Symbol %s is undefined." (symbol-name data))
+                                        nil
+                                        'fout<<projectIDE)
              (throw 'Error nil))
 
            ;; Serialize and wirte data to file
@@ -394,6 +435,10 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
   (catch 'Error
     ;; Check file accessibility
     (unless (file-readable-p file)
+      (projectIDE-message-handle 'Error
+                                 (format "Symbol %s is undefined." symbol)
+                                 nil
+                                 'fin>>projectIDE)
       (throw 'Error nil))
 
     ;; Read from file
@@ -402,6 +447,10 @@ Example:\t ~/.emacs.d/file.txt , ~/usr/mola/documents/cache.txt"
       (unless (equal (point-min) (point-max))
         (if (boundp symbol)
             (set symbol (read (buffer-string)))
+          (projectIDE-message-handle 'Error
+                                     (format "Symbol %s is not accessible." file)
+                                     nil
+                                     'fin>>projectIDE)
           (throw 'Error nil))))
     
     ;; Return value
@@ -451,7 +500,7 @@ Descrip.:\t Flie path to .projectIDE."
         (goto-char 1)
 
         ;; Search keys
-        (while (search-forward-regexp projectIDE-default-config-key-regexp nil t)
+        (while (search-forward-regexp projectIDE-default-config-key-regexp-string nil t)
           (save-excursion
 
             ;; Identify key
@@ -466,12 +515,18 @@ Descrip.:\t Flie path to .projectIDE."
                       (cond
                        ((= counter 0) ;; "^signature="
                         (when (projectIDE-project-signature project)
-                          (message "[ProjectIDE::Error] Config file corrupt. 'signature' defined more than once.")
+                          (projectIDE-message-handle 'Error
+                                                     (format "Config file corrupt. 'signature' in %s definded more than once." file)
+                                                     t
+                                                     'projectIDE-configParser)
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-signature project) (trim-string (buffer-substring-no-properties (point) line-end))))
                        ((= counter 1) ;; "^name="
                         (when (projectIDE-project-name project)
-                          (message "[ProjectIDE::Error] Config file corrupt. 'name' defined more than once.")
+                          (projectIDE-message-handle 'Error
+                                                     (format "Config file corrupt. 'name' in %s definded more than once." file)
+                                                     t
+                                                     'projectIDE-configParser)
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-name project) (trim-string (buffer-substring-no-properties (point) line-end))))
                        ((= counter 2) ;; "^exclude="
@@ -484,10 +539,13 @@ Descrip.:\t Flie path to .projectIDE."
                                 (projectIDE-append-list (projectIDE-project-whitelist project) whitelist))))
                        ((= counter 4) ;; "^inject"
                         ;; Implement later
-                        (message "[ProjectIDE::Warning] Inject eature not availiable for this version.")))
-                      (setq found t)))
+                        (projectIDE-message-handle 'Warning
+                                                   "Inject feature not availiable for this version."
+                                                   t
+                                                   'projectIDE-configParser)))
+                      (setq found t))
                 (setq counter (1+ counter))
-                (setq keylist (cdr keylist)))))))
+                (setq keylist (cdr keylist))))))))
 
       (unless (projectIDE-project-exclude project)
         (setf (projectIDE-project-exclude project) projectIDE-default-exclude))
@@ -498,9 +556,6 @@ Descrip.:\t Flie path to .projectIDE."
       ;; Return value
       project)))
 
-(defun projectIDE-append-list (list1 list2)
-  (let ((newlist (append list1 list2)))
-    (cl-remove-duplicates newlist :test 'equal)))
 
 (cl-defmacro projectIDE-create (projectType &key templateDir defaultDir document)
   "Create projection creation function."
@@ -534,21 +589,37 @@ Descrip.:\t Flie path to .projectIDE."
                (throw 'Error nil))
              ;; Prevent null string project name
              (when (string= projectName "")
-               (message "[ProjectIDE::Error] Project name cannot be empty string.")
+               (projectIDE-message-handle 'Error
+                                          "Project name cannot be empty string."
+                                          t
+                                          'projectIDE-create)
                (throw 'Error nil))
              ;; Make sure project root directory can be generated
              (unless (and (file-accessible-directory-p dir) (file-writable-p dir))
-               (message (format "[ProjectIDE::Error] Project directory \"%s\" is not accessible." dir))
+               (projectIDE-message-handle 'Error
+                                          (format "Project directory \"%s\" is not accessible." dir)
+                                          t
+                                          'projectIDE-create)
                (throw 'Error nil))
              (when (file-exists-p (concat dir projectName))
-               (message (format "[ProjectIDE::Error] Folder \"%s\" already exists in \"%s\". Operation cancelled." projectName dir))
+               (projectIDE-message-handle 'Error
+                                          (format "Folder \"%s\" already exists in \"%s\". Operation cancelled." projectName dir)
+                                          t
+                                          'projectIDE-create)
                (throw 'Error nil))
 
              ;; Ask for user prompt
              (unless (or (not projectIDE-create-require-confirm) ;; Confirm project creation guard
-                         (y-or-n-p (format "Project\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
-                                           projectName ,templateDir (concat dir projectName))))
-               (message "[ProjectIDE::Info] Projection creation canceled.")
+                         (y-or-n-p (projectIDE-message-handle
+                                    'Info
+                                    (format "\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
+                                            projectName ,templateDir (concat dir projectName))
+                                    nil
+                                    'projectIDE-create)))
+               (projectIDE-message-handle 'Info
+                                          "Projection creation cancelled."
+                                          t
+                                          'projectIDE-create)
                (throw 'Error nil))
 
 
@@ -561,11 +632,17 @@ Descrip.:\t Flie path to .projectIDE."
                (projectIDE-new-project projectRoot)
 
                (run-hooks 'projectIDE-global-project-create-hook)
-               (message "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
-                        projectName ,templateDir projectRoot))))
+               (projectIDE-message-handle 'Info
+                                          (format "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
+                                                  projectName ,templateDir projectRoot)
+                                          t
+                                          'projectIDE-create))))
                  
       ;; Macro error message
-      (message "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir))))
+      (projectIDE-message-handle 'Error
+                                 (format "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir)
+                                 t
+                                 'projectIDE-create))))
 
 (defun projectIDE-new-project (path)
   ;; Ensure PATH is a directory before passing to this function.
@@ -673,15 +750,17 @@ Descrip.:\t String of path to file or folder."
   (nth 5 (file-attributes path)))
 
 (defun projectIDE-get-folder-list (projectRoot currentPath &optional exclude whitelist)
-  "Combining PROJECTROOT and CURRENTPATH generate a complete current path.
+  "Combining PROJECTROOT and CURRENTPATH to generate a complete current path.
 Return a list of folder (path relative to project root) under current path.
 The returned folder paths includes all its sub-directories.
-If there is no folder under current path, return nil.
+The returned folder list contains a null string \"\".
+The null string indicates the CURRENTPATH (relative to project root).
+If EXCLUDE and WHITELIST is provided, they will be used to filter the result.
 
 Return
 Type:\t\t string list of folder paths
 Descrip.:\t Return a list of folder (relative to PROJECTROOT) under CURRENTPATH.
-\t\t\t If there is no files under CURRENTPATH, return nil.
+\t\t\t If there is no folder under CURRENTPATH, return a null string is returned.
 
 PROJECTROOT
 Type:\t\t string
@@ -690,7 +769,15 @@ Descrip.:\t String of path to project root.
 CURRENTPATH
 Type:\t\t string
 Descrip.:\t String of current searching path.
-\t\t\t It is relative to PROJECTROOT."
+\t\t\t It is relative to PROJECTROOT.
+
+EXCLUDE
+Type:\t\t string of regexp
+Descrip.:\t A single string of regexp to filter out result.
+
+WHITELIST
+Type:\t\t string of regexp
+Descrip.:\t A single string of regexp to whiltelist excluded result."
   
   (let ((content-list (directory-files (concat projectRoot currentPath) nil nil 'nosort)) ;; A list of content entry relative to current path
         (folder-list nil))
@@ -720,6 +807,7 @@ Descrip.:\t String of current searching path.
 (defun projectIDE-get-path-files (path &optional exclude whitelist)
   "Return a list of files (only file name) under PATH.
 If there is no files under PATH, return nil.
+If EXCLUDE and WHITELIST is provided, they will be used to filter the result.
 
 Return
 Type:\t\t string list of file names
@@ -728,7 +816,15 @@ Descrip.:\t Return a list of files (only file name) under PATH.
 
 PATH
 Type:\t\t string
-Descrip.:\t String of path."
+Descrip.:\t String of path.
+
+EXCLUDE
+Type:\t\t string of regexp
+Descrip.:\t A single string of regexp to filter out result.
+
+WHITELIST
+Type:\t\t string of regexp
+Descrip.:\t A single string of regexp to whiltelist excluded result."
   
   (let ((contents (directory-files path t nil 'nosort))
         (filelist nil))
@@ -744,9 +840,9 @@ Descrip.:\t String of path."
       (setq contents (cdr contents)))
 
     ;; Return value
-    (sort filelist 'projectIDE-filename-sort-predicate)))
+    (sort filelist 'projectIDE-sort-predicate)))
 
-(defun projectIDE-filename-sort-predicate (filename1 filename2)
+(defun projectIDE-sort-predicate (filename1 filename2)
   "Wrapper of `string-lessp' to sort filename regardless of case.
 
 FILENAME1 FILENAME2
@@ -799,10 +895,13 @@ Descrip.: Display error message to minibuffer if it is t."
   ;; Return value
   t)
 
-(defun projectIDE-add-projectRoot-prefix (projectRoot list)
-  "Add the PROJECTROOT as a prefix to each entry in the LIST.
-Also, it adjusts the regexp in the list.
-Return a modified LIST.
+(defun projectIDE-manipulate-exclude-whitelist (projectRoot list)
+  "This function add the PROJECTROOT as a prefix to each entry in the LIST.
+It also ajusts the regexp in the list so that
+1) \"*\" is converted to \".*\" to provide wildcard function
+2) \".\" is converted to \"\\.\" to prevent misuse of regexp in file extension
+3) string end \"\\'\" is added to each list item
+This function return a manipulated LIST.
 
 Return
 Type:\t\t string list
@@ -829,16 +928,18 @@ Descip.:\t A string list which each entry is to be prefixed."
     return))
 
 (defun projectIDE-update-cache ()
+  "An interactive function to update project cache of current buffer.
+In simple term, it updates folders and files of the project."
   (interactive)
   (let ((signature (gethash (current-buffer) projectIDE-buffer-trace)))
     (if signature
-        (projectIDE-update-cache-by-signature signature t)
+        (projectIDE-update-cache-backend signature t)
       (projectIDE-message-handle 'Warning
                                  "Current buffer not in project record"
                                  t
                                  'projectIDE-update-cache))))
 
-(defun projectIDE-update-cache-by-signature (signature &optional ErrorMessage)
+(defun projectIDE-update-cache-backend (signature &optional ErrorMessage)
   "Update cache for the project provided by SIGNATURE.
 ERRORMESSAGE indicates whether message is displayed to minibuffer
 if there is any error.  Error message is not displayed by default.
@@ -856,7 +957,7 @@ Descrip.: Display error message to minibuffer if it is t."
       (projectIDE-message-handle 'Error
                                  "Update cache terminated due to failure in updating config"
                                  ErrorMessage
-                                 'projectIDE-update-cache-by-signature)
+                                 'projectIDE-update-cache-backend)
       (throw 'Error nil))
 
     
@@ -878,17 +979,17 @@ Descrip.: Display error message to minibuffer if it is t."
     (let* ((projectRoot (projectIDE-record-path (gethash signature projectIDE-runtime-record)))
            (cache (gethash signature projectIDE-runtime-cache))
            (project (projectIDE-cache-project cache)) ;; cached project
-           (exclude (projectIDE-concat-regexp-list
-                     (projectIDE-add-projectRoot-prefix projectRoot (projectIDE-project-exclude project)))) ;; cached exclude list
-           (whitelist (projectIDE-concat-regexp-list
-                       (projectIDE-add-projectRoot-prefix projectRoot (projectIDE-project-whitelist project)))) ;; cached whitelist
+           (exclude (projectIDE-concat-regexp
+                     (projectIDE-manipulate-exclude-whitelist projectRoot (projectIDE-project-exclude project)))) ;; cached exclude list
+           (whitelist (projectIDE-concat-regexp
+                       (projectIDE-manipulate-exclude-whitelist projectRoot (projectIDE-project-whitelist project)))) ;; cached whitelist
            (folder-hash (projectIDE-cache-folder-hash cache)) ;; cached folder hash table
            (folder-list (hash-table-keys folder-hash)) ;; cached folder list
            (file-hash (projectIDE-cache-file-hash cache))) ;; cached file hash table
 
       ;; Check current entries in the folder hash table first
       ;; Update the file list if modification time has been changed
-      ;; Remove the folder and file list if folder no longer exists in the system 
+      ;; Remove the folder and file list if folder no longer exists in the system
       (while (car-safe folder-list)
         (let* ((folder-name (car folder-list)) ;; folder path relative to projectRoot
                (folder-path (concat projectRoot (car folder-list)))) ;; complete folder path
@@ -915,12 +1016,17 @@ Descrip.: Display error message to minibuffer if it is t."
             (puthash (car current-folder-list) (projectIDE-last-modify (concat projectRoot (car current-folder-list))) folder-hash))
           (setq current-folder-list (cdr current-folder-list))))))
 
-(let ((cache (gethash signature projectIDE-runtime-cache)))
-  (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache)))
+  (let ((cache (gethash signature projectIDE-runtime-cache)))
+    (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache)))
 
 (defun projectIDE-index-project (path)
-  "This is an interactive function to let user index a project.
-PATH is the project root."
+  "This is an interactive function to let user indexing a project.
+It will ask for a project root (PATH) and indexing starts there.
+
+PATH
+Type:\t\t string of directory
+Descrip.:\t Path to be indexed as project root."
+  
   (interactive (list (read-directory-name "Please choose the project root: "
                                           (file-name-directory (or buffer-file-name user-emacs-directory)))))
 
@@ -946,7 +1052,6 @@ Press C-g to cancel the operation."))
       (projectIDE-identify-project (car buffers))
       (setq buffers (cdr buffers))))
   
-
   (projectIDE-message-handle 'Info
                              (format "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
                                      (projectIDE-project-name
@@ -1066,27 +1171,6 @@ Descrip.:\t The buffer being identified."
              t
              'projectIDE-identify-project)))))
 
-  
-(defun projectIDE-add-to-list (list element)
-  "Wrapper to `add-to-list'(LIST ELEMENT).
-Add ELEMENT to  LIST if it isn't there yet.
-This function does not modify the original list.
-Instead, it returns a new list.
-In addition, it accepts non-symbol LIST.
-
-Return
-Type:\t\t list
-Descrip.:\t New list with ELEMENT add to LIST
-
-LIST
-Type:\t\t list of any type
-Descrip.:\t List to be checked and appended to.
-
-ELEMENT
-Type:\t\t same type of LIST element
-Descrip.:\t Add to LIST if ELEMENT isn't there yet."
-  (add-to-list 'list element))
-  
 (defun projectIDE-initialize ()
   "ProjectIDE-initialize."
   (interactive)
@@ -1096,9 +1180,12 @@ Descrip.:\t Add to LIST if ELEMENT isn't there yet."
   ;; Check global RECORD file exist
   (unless (file-exists-p PROJECTIDE-RECORD-FILE)
     (write-region "" nil PROJECTIDE-RECORD-FILE t 'inhibit))
-  ;; Check INDIVIDUAL record folder exist
+  ;; Check cache folder exist
   (unless (file-exists-p PROJECTIDE-CACHE-PATH)
     (make-directory PROJECTIDE-CACHE-PATH))
+  ;; Check log folder exist
+  (unless (file-exists-p PROJECTIDE-LOG-PATH)
+    (make-directory PROJECTIDE-LOG-PATH))
 
   (if (fin>>projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record)
       (progn
@@ -1120,24 +1207,5 @@ Descrip.:\t Add to LIST if ELEMENT isn't there yet."
 ;; Return value
   projectIDE-p)
 
-;;;; Testing function
-(defvar projectIDE-test-path
-  (file-name-as-directory
-   (concat
-    (file-name-as-directory
-     (concat default-directory "projectIDE")) "test")))
-(defvar projectIDE-testfile1 (concat projectIDE-test-path "testfile1.txt"))
-(defvar projectIDE-testfile2 (concat projectIDE-test-path "testfile2.txt"))
-(defvar projectIDE-testfile3 (concat projectIDE-test-path "testfile3.txt"))
-(defvar projectIDE-testfile4 (concat projectIDE-test-path "testfile4.txt"))
-(defvar projectIDE-testfile5 (concat projectIDE-test-path "testfile5.txt"))
- (defvar projectIDE-testvar1 nil)
-(defvar projectIDE-testvar2 nil)
-(defvar projectIDE-testvar3 nil)
-(defvar projectIDE-testvar4 nil)
-(defvar projectIDE-testvar5 nil)
-(projectIDE-initialize)
-
-;;;; End Testing
 (provide 'projectIDE)
 ;;; projectIDE.el ends here
