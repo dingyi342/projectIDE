@@ -40,13 +40,17 @@
   "Global setting for all projects."
   :tag "Enviroment Values"
   :group 'projectIDE)
-(defgroup projectIDE-project-creation nil
-  "Setting for creating project."
-  :tag "Projection creation"
-  :group 'projectIDE)
 (defgroup projectIDE-config-file nil
   "Setting for loading individual project config file."
   :tag "Config file settings"
+  :group 'projectIDE)
+(defgroup projectIDE-project-creation nil
+  "Setting for creating project."
+  :tag "Project creation"
+  :group 'projectIDE)
+(defgroup projectIDE-project-opening nil
+  "Setting for opening project behaviour."
+  :tag "Project opening"
   :group 'projectIDE)
 (defgroup projectIDE-hook nil
   "All available projectIDE hooks."
@@ -103,6 +107,57 @@
           (const :tag "Default" default))
   :group 'projectIDE-global)
 
+;; Project config file variable
+(defconst projectIDE-default-config-key
+  '("^signature="
+    "^name="
+    "^exclude="
+    "^whitelist="
+    "^inject=")
+  "Default projectIDE config file keyword.
+Must not change.")
+
+;; Project Creation Variable
+(defcustom projectIDE-create-defaultDir (getenv "HOME")
+  "Global default project directory.
+When creating project, if no specific directory or
+invalid default directory is entered, projectIDE uses this
+variable as the default directory."
+  :tag "Default project directory"
+  :type 'directory
+  :group 'projectIDE-project-creation)
+
+(defcustom projectIDE-global-project-create-hook nil
+  "Hook runs when creating project."
+  :tag "projectIDE-global-project-create-hook"
+  :type 'hook
+  :group 'projectIDE-project-creation
+  :group 'projectIDE-hook)
+
+(defcustom projectIDE-create-require-confirm t
+  "Require confirmation when creating project?
+If this value is nil, projectIDE will skip confirmation
+before creating project.
+Other values ask for the confirmation."
+  :tag "Require confirmation when creating project?"
+  :type 'boolean
+  :group 'projectIDE-project-creation)
+
+;; Project Opening Variable
+(defcustom projectIDE-name-path-seperator "\t\t\t\t\t@PATH="
+  "The seperator of name and path when opening project.
+There must be an unique identifier like '@'
+as it will be use to trim the path."
+  :tag "Name-path seperator."
+  :type 'string
+  :group 'projectIDE-project-opening)
+
+(defcustom projectIDE-open-last-opened-files t
+  "When opening a project, open the last opened files instead of Dired."
+  :tag "Open last opened files?"
+  :type 'bool
+  :group 'projectIDE-project-opening)
+
 ;; Runtime Variable
 (defvar projectIDE-p nil
   "Indicate whether projectIDE is running.
@@ -136,42 +191,6 @@ Never attempt to modify it directly.")
   "Trace buffer which is a projectIDE project.
 Never attempt to modify it directly.")
 
-;; Project Creation Variable
-(defcustom projectIDE-create-defaultDir (getenv "HOME")
-  "Global default project directory.
-When creating project, if no specific directory or
-invalid default directory is entered, projectIDE uses this
-variable as the default directory."
-  :tag "Default project directory"
-  :type 'directory
-  :group 'projectIDE-project-creation)
-
-(defcustom projectIDE-global-project-create-hook nil
-  "Hook runs when creating project."
-  :tag "projectIDE-global-project-create-hook"
-  :type 'hook
-  :group 'projectIDE-project-creation
-  :group 'projectIDE-hook)
-
-(defcustom projectIDE-create-require-confirm t
-  "Require confirmation when creating project?
-If this value is nil, projectIDE will skip confirmation
-before creating project.
-Other values ask for the confirmation."
-  :tag "Require confirmation when creating project?"
-  :type 'boolean
-  :group 'projectIDE-project-creation)
-
-;; Project config file variable
-(defconst projectIDE-default-config-key
-  '("^signature="
-    "^name="
-    "^exclude="
-    "^whitelist="
-    "^inject=")
-  "Default projectIDE config file keyword.
-Must not change.")
-
 (defun projectIDE-concat-regexp (list)
   "Return a single regexp string from a LIST of separated regexp.
 
@@ -195,18 +214,18 @@ Descrip.:\t A string list of regexp."
   "Combine the projectIDE-default-exclude.")
 
 (defcustom projectIDE-default-exclude
-  '("*.idea"
-    "*.eunit"
-    "*.git"
-    "*.hg"
-    "*.fslckout"
-    "*.bzr"
-    "*_darcs"
-    "*.tox"
-    "*.svn"
-    "*.stack-work")
+  `(,(concat (file-name-as-directory "*.idea") "*")
+    ,(concat (file-name-as-directory "*.eunit") "*")
+    ,(concat (file-name-as-directory "*.git") "*")
+    ,(concat (file-name-as-directory "*.hg") "*")
+    ,(concat (file-name-as-directory "*.fslckout") "*")
+    ,(concat (file-name-as-directory "*.bzr") "*")
+    ,(concat (file-name-as-directory "*_darcs") "*")
+    ,(concat (file-name-as-directory "*.tox") "*")
+    ,(concat (file-name-as-directory "*.svn") "*")
+    ,(concat (file-name-as-directory "*.stack-work") "*"))
   "A list of exclude items by projectIDE."
-  :group 'projecIDE-config-file
+  :group 'projectIDE-config-file
   :type '(repeat string))
 
 (defcustom projectIDE-default-whitelist nil
@@ -249,13 +268,20 @@ Descrip.:\t A string list of regexp."
   (file-hash (make-hash-table :test 'equal))   ;; hash table. key: path  value: file list
   opened-buffer                                ;; string in terms of file path
   association                                  ;; hash table. key: filename value: file path list
+  reserve-field-1
+  reserve-field-2
+  reserve-field-3
   )
 
 (cl-defstruct projectIDE-record
   signature
+  name
   path
   create-date
-  last-modify)
+  last-modify
+  reserve-field-1
+  reserve-field-2
+  reserve-field-3)
 
 (defun projectIDE-message-handle (type message &optional print function)
   "This funtion handle messages from projectIDE for debug purpose.
@@ -485,7 +511,7 @@ Descrip.:\t A signature string."
     return))
 
 (defun projectIDE-find-record-by-path (path)
-  "Return record signature by the given PATH.
+  "Return record signature by the best match of PATH in record.
 Record is search in projectIDE-runtime-record.
 
 Return
@@ -497,14 +523,24 @@ PATH
 Type:\t\t string
 Descript.:\t File or folder path in string."
   (let ((record (hash-table-values projectIDE-runtime-record))
-        (found nil))
-    (while (and (not found) (car-safe record))
+        (candidates nil)
+        (signature nil))
+    (while (car-safe record)
       (when (string-prefix-p (projectIDE-record-path (car record)) path)
-        (setq found (projectIDE-record-signature (car record))))
+        (add-to-list 'candidates (projectIDE-record-signature (car record))))
       (setq record (cdr record)))
+
+    (if (<= (length candidates) 1)
+        (setq signature (car-safe candidates))
+      (while (car-safe candidates)
+        (when (> (length (projectIDE-record-path (gethash (car candidates) projectIDE-runtime-record)))
+                 (length (projectIDE-record-path (gethash signature projectIDE-runtime-record))))
+          (setq signature (car candidates)))
+
+        (setq candidates (cdr candidates))))
     
     ;; Return value
-    found))
+    signature))
 
 (defun projectIDE-configParser (file)
   "Parse .projectIDE config FILE.
@@ -745,10 +781,15 @@ Descrip.:\t Path to project root."
 
 (defun projectIDE-create-record (configfile)
   "Create projectIDE-record by reading CONFIGFILE.
-Write to RECORD file afterward."
+Write to RECORD file afterward.
+
+CONFIGFILE
+Type:\t\t string
+Descrip.:\t A string of path to .projectIDE config file."
   (let ((project (projectIDE-configParser configfile))
         (record (make-projectIDE-record)))
     (setf (projectIDE-record-signature record)(projectIDE-project-signature project)
+          (projectIDE-record-name record)(projectIDE-project-name project)
           (projectIDE-record-path record) (file-name-directory configfile)
           (projectIDE-record-create-date record) (time-to-days (current-time))
           (projectIDE-record-last-modify record) (time-to-days (current-time)))
@@ -756,7 +797,11 @@ Write to RECORD file afterward."
     (fout<<projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record)))
 
 (defun projectIDE-create-cache (configfile)
-  "Create individual record by CONFIGFILE."
+  "Create individual record by CONFIGFILE.
+
+CONFIGFILE
+Type:\t\t string
+Descrip.:\t A string of path to .projectIDE config file."
   (let* ((cache (make-projectIDE-cache))
          (project (projectIDE-configParser configfile))
          (file (concat PROJECTIDE-CACHE-PATH (projectIDE-project-signature project))))
@@ -916,6 +961,10 @@ Descrip.: Display error message to minibuffer if it is t."
                                      'projectIDE-update-project-config)
           (throw 'Error nil))
 
+        (unless (equal (projectIDE-project-name project)
+                       (projectIDE-record-name (gethash signature projectIDE-runtime-record)))
+          (setf (projectIDE-record-name (gethash signature projectIDE-runtime-record)) (projectIDE-project-name project)))
+        
         (puthash signature project projectIDE-opened-project))))
 
   ;; Return value
@@ -1193,7 +1242,11 @@ Descrip.:\t The buffer being identified."
             (setf (projectIDE-cache-opened-buffer cache) (projectIDE-add-to-list (projectIDE-cache-opened-buffer cache) (buffer-file-name buffer)))
             ;; Add to buffer-trace
             (puthash (or buffer (current-buffer)) signature projectIDE-buffer-trace))
-
+          
+          ;; Change last modify time in record
+          (setf (projectIDE-record-last-modify (gethash signature projectIDE-runtime-record))
+                (time-to-days (current-time)))
+          
           (unless buffer
             (projectIDE-message-handle
              'Info
@@ -1208,7 +1261,7 @@ This function should be added to `kill-buffer-hook'"
     (let* ((currentBuffer (current-buffer))
            (signature (gethash currentBuffer projectIDE-buffer-trace))
            (cache (gethash signature projectIDE-runtime-cache))
-           (opened-buffer (projectIDE-cache-opened-buffer cache)))
+           (opened-buffer (and cache (projectIDE-cache-opened-buffer cache))))
       (remhash currentBuffer projectIDE-buffer-trace)
       (if (> (length opened-buffer) 1)
           (setf (projectIDE-cache-opened-buffer cache) (remove (buffer-file-name currentBuffer) opened-buffer))
@@ -1234,11 +1287,91 @@ Descrip.:\t String of projectIDE signature."
 
 (defun projectIDE-get-project-list ()
   "Return a list of project from projectIDE-runtime-record."
-  )
+  (let ((record-list (hash-table-values projectIDE-runtime-record))
+        (project-name-list))
+    (sort record-list
+          (lambda (record1 record2) (> (projectIDE-record-last-modify record1)
+                                       (projectIDE-record-last-modify record1))))
+    (setq project-name-list
+          (mapcar* 'concat
+                   (mapcar 'projectIDE-record-name record-list) ;; project name
+                   (mapcar (lambda (entry) (concat projectIDE-name-path-seperator entry)) ;; project path
+                           (mapcar 'projectIDE-record-path record-list))))
+    project-name-list))
 
-(defun projectIDE-open-project ())
-;; (completing-read "Chosse this " projectIDE-runtime-record)
-;; (projectIDE-prompt "Chosse this " '("a" "b" "c"))
+(defun projectIDE-open-project ()
+  "Open certain project with user prompt."
+  (interactive)
+  (let* ((choice (projectIDE-prompt "Choose project: " (projectIDE-get-project-list)))
+         (path (progn
+                 (string-match projectIDE-name-path-seperator choice)
+                 (substring choice (match-end 0) nil)))
+         (signature (projectIDE-find-record-by-path path)))
+
+    (catch 'Error
+      ;; Check if any unexpected result from user prompt
+      (unless (and (file-exists-p path) (file-directory-p path))
+        (projectIDE-message-handle 'Error
+                                   (format "The path you tried to open is %s.
+If it is unexpected, try modifying `projectIDE-name-path-seperator'" path)
+                                   t
+                                   'projectIDE-open-project)
+        (throw 'Error nil))
+
+      ;; Check whether .projectIDE exists under path
+      (unless (file-exists-p
+               (concat (projectIDE-record-path (gethash signature projectIDE-runtime-record))
+                       PROJECTIDE-PROJECTROOT-IDENTIFIER))
+        (projectIDE-message-handle 'Warning
+                                   (format ".projectIDE file not exists under %s.
+If you moved the project, you can use `projectIDE-index-project' to reindex it."
+                                           (projectIDE-record-path (gethash signature projectIDE-runtime-record)))
+                                   t
+                                   'projectIDE-open-project)
+        (throw 'Error nil))
+
+      (let* ((projectRoot (concat (projectIDE-record-path (gethash signature projectIDE-runtime-record)) PROJECTIDE-PROJECTROOT-IDENTIFIER))
+             (project (projectIDE-configParser projectRoot))
+             (cache nil))
+
+        ;; check project parse successfully
+        (unless project
+          (throw 'Error nil))
+        (puthash signature project projectIDE-opened-project)
+
+        ;; check if there is cache file
+        (unless (file-exists-p (concat PROJECTIDE-CACHE-PATH signature))
+          (projectIDE-create-cache projectRoot))
+
+        ;; check if cache load successfully
+        (unless (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache)
+          (projectIDE-message-handle 'Error
+                                     (format "Unable to load project cache: %s %s"
+                                             (projectIDE-project-name project) signature)
+                                     t
+                                     'projectIDE-open-project)
+          (throw 'Error nil))
+
+        (when cache
+          (puthash signature cache projectIDE-runtime-cache))
+        
+        ;; Try to open last opened files
+        (when (and projectIDE-open-last-opened-files
+                   (projectIDE-cache-opened-buffer cache))
+          (let ((opened-buffer (projectIDE-cache-opened-buffer cache)))
+            (setf (projectIDE-cache-opened-buffer cache) nil)
+            (while (car-safe opened-buffer)
+              (when (file-exists-p (car opened-buffer))
+                (find-file (car opened-buffer)))
+              (setq opened-buffer (cdr opened-buffer)))))
+
+        ;; If no files are known to be opened
+        ;; Open project root in dired mode
+        (unless (projectIDE-cache-opened-buffer cache)
+          (remhash signature projectIDE-opened-project)
+          (remhash signature projectIDE-runtime-cache)
+          (dired path))))))
+
 
 (defun projectIDE-prompt (prompt choices &optional initial-input)
   "Create a PROMPT to choose from CHOICES which is a list.
