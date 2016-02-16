@@ -1524,9 +1524,12 @@ This function should be added to `kill-buffer-hook'"
         (remhash signature projectIDE-opened-project)
         (remhash signature projectIDE-runtime-cache)))))
 
-(defun projectIDE-get-project-files (&optional signature)
+(defun projectIDE-get-project-file-list (&optional signature caller)
   "Return the files list of project for given SIGNATURE.
 If SIGNATURE is not provided, try to get signature from current buffer.
+
+CALLER is the function list calling this function.
+It is uesed for debugging purpose.
 
 Return
 Type:\t\t string list
@@ -1534,11 +1537,56 @@ Descrip.:\t List of file path.
 
 Signature
 Type:\t\t string
-Descrip.:\t String of projectIDE signature."
+Descrip.:\t String of projectIDE signature.
 
-  (let ((tempOpen nil))
-    (if signature
-      (if (not )))))
+CALLER
+Type:\t\t symbol list
+Descrip.:\t Function list calling this function for debug purpose."
+
+  (catch 'Error
+    (let ((temp-open nil)
+          (cache nil)
+          (cached-folder-list nil)
+          (cached-file-hash nil)
+          (return-file-list nil))
+
+      ;; Try to load cache to projectIDE-runtime-cache if it is not yet opened
+      (unless (or (gethash signature projectIDE-runtime-cache)
+                  (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (and projectIDE-debug-mode
+                                                                                        (append (list 'projectIDE-get-project-file-list) caller))))
+        (when projectIDE-debug-mode
+          (projectIDE-message-handle 'Warning
+                                     (format "Unable to read cache %s" (concat PROJECTIDE-CACHE-PATH signature))
+                                     nil
+                                     'projectIDE-get-project-file-list
+                                     (append (list 'projectIDE-get-project-file-list) caller)))
+        (throw 'Error nil))
+
+      ;; If it cache is read from file, flag temp open
+      ;; so it can be remove afterward
+      (when cache
+        (setq temp-open t)
+        (puthash signature cache projectIDE-runtime-cache))
+
+      (setq cached-folder-list
+            (sort (hash-table-keys (projectIDE-cache-folder-hash (gethash signature projectIDE-runtime-cache)))
+                  'projectIDE-sort-predicate)
+            cached-file-hash (projectIDE-cache-file-hash (gethash signature projectIDE-runtime-cache)))
+
+      (while (car-safe cached-folder-list)
+        (let ((folder (car cached-folder-list))
+              (temp-file-list nil))
+          (setq temp-file-list (gethash folder cached-file-hash))
+          (while (car-safe temp-file-list)
+            (setq return-file-list (append (list (concat folder (car temp-file-list))) return-file-list))
+            (setq temp-file-list (cdr temp-file-list)))
+          (setq cached-folder-list (cdr cached-folder-list))))
+      
+      (when temp-open
+        (remhash signature projectIDE-runtime-cache))
+
+      ;; Return value
+      return-file-list)))
 
 (defun projectIDE-get-project-list ()
   "Return a list of project from projectIDE-runtime-record."
@@ -1582,6 +1630,19 @@ If it is unexpected, try modifying `projectIDE-name-path-seperator'" path)
                                         (append (list 'projectIDE-open-project) caller)))
         (throw 'Error nil))
 
+      ;; Check whether project has been opened
+      ;; If yes, just open the last opened buffer
+      (when (gethash signature projectIDE-runtime-cache)
+        (projectIDE-message-handle 'Info
+                                   (format "Project [%s] had been opened already."
+                                           (projectIDE-project-name (gethash signature projectIDE-opened-project)))
+                                   t
+                                   'projectIDE-open-project
+                                   (and projectIDE-debug-mode
+                                        (append (list 'projectIDE-open-project) caller)))
+        (find-file (car (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))))
+        (throw 'Error nil))
+      
       ;; Check whether .projectIDE exists under path
       (unless (file-exists-p
                (concat (projectIDE-record-path (gethash signature projectIDE-runtime-record))
@@ -1642,7 +1703,7 @@ If you moved the project, you can use `projectIDE-index-project' to reindex it."
               (when (file-exists-p (car opened-buffer))
                 (find-file (car opened-buffer)))
               (setq opened-buffer (cdr opened-buffer)))))
-
+        
         ;; If no files are known to be opened
         ;; Open project root in dired mode
         (unless (projectIDE-cache-opened-buffer cache)
