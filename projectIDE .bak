@@ -52,7 +52,7 @@
   "Setting for opening project behaviour."
   :tag "Project opening"
   :group 'projectIDE)
-(defgroup projectIDE-file-opening nil
+(defgroup projectIDE-project-file-opening nil
   "Setting for opening project file behaviour."
   :tag "File opening"
   :group 'projectIDE)
@@ -148,7 +148,7 @@ Other values ask for the confirmation."
   :group 'projectIDE-project-creation)
 
 ;; Project Opening Variable
-(defcustom projectIDE-name-path-seperator "\t\t\t\@PATH="
+(defcustom projectIDE-name-path-seperator "\t\t\t\t\t@PATH="
   "The seperator of name and path when opening project.
 There must be an unique identifier like '@'
 as it will be use to trim the path."
@@ -164,16 +164,10 @@ as it will be use to trim the path."
 
 ;; File Opening Variable
 (defcustom projectIDE-use-project-prefix t
-  "When showing files, show project name as prefix instead of full path."
+  "When show files, show project name as prefix instead of full path."
   :tag "Use project prefix instead of full path?"
   :type 'bool
-  :group 'projectIDE-file-opening)
-
-(defcustom projectIDE-open-file-update-cache t
-  "For the first time opening a file from a project, update the project cache."
-  :tag "Update cache when first opening a file from a project?"
-  :type 'bool
-  :group 'projectIDE-file-opening)
+  :group 'projectIDE-project-file-opening)
 
 ;; Runtime Variable
 (defvar projectIDE-p nil
@@ -353,9 +347,8 @@ Descrip.: Functions calling FUNCTION to produce the message.  Just for debug pur
     
     (when print
       (message (concat message-prefix " " message)))
-    
-    (when (and (file-exists-p PROJECTIDE-LOG-PATH)
-               (or projectIDE-debug-mode (and logtype (>= logtype projectIDE-log-level))))
+
+    (when (or projectIDE-debug-mode (and logtype (>= logtype projectIDE-log-level)))
       (let ((message (replace-regexp-in-string "\n" "\n\t\t\t\t\t" message))
             (functions-string ""))
         (while (and (car-safe functions) (symbolp (car functions)))
@@ -479,7 +472,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                             (format "Unable to write to %s." file)
                                             nil
                                             'fout<<projectIDE
-                                            (nconc (list 'fout<<projectIDE) caller))
+                                            (append (list 'fout<<projectIDE) caller))
                  (throw 'Error nil))))
 
            ;; Check symbol exists
@@ -488,7 +481,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                         (format "Symbol %s is undefined." (symbol-name data))
                                         nil
                                         'fout<<projectIDE
-                                        (nconc (list 'fout<<projectIDE) caller))
+                                        (append (list 'fout<<projectIDE) caller))
              (throw 'Error nil))
 
            ;; Serialize and wirte data to file
@@ -500,7 +493,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                         (format "Data %s written to file %s" (symbol-name data) file)
                                         nil
                                         'fout<<projectIDE
-                                        (nconc (list 'fout<<projectIDE) caller)))
+                                        (append (list 'fout<<projectIDE) caller)))
            ;; return value
            noError)))
 
@@ -534,7 +527,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                  (format "File %s is not accessible" file)
                                  nil
                                  'fin>>projectIDE
-                                 (nconc (list 'fin>>projectIDE) caller))
+                                 (append (list 'fin>>projectIDE) caller))
       (throw 'Error nil))
 
     ;; Read from file
@@ -547,7 +540,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                      (format "Symbol %s is undefined." (symbol-name symbol))
                                      nil
                                      'fin>>projectIDE
-                                     (nconc (list 'fin>>projectIDE) caller))
+                                     (append (list 'fin>>projectIDE) caller))
           (throw 'Error nil))))
 
     (when projectIDE-debug-mode
@@ -555,7 +548,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                  (format "Data from %s read into %s" file (symbol-name symbol))
                                  nil
                                  'fin>>projectIDE
-                                 (nconc (list 'fin>>projectIDE) caller)))
+                                 (append (list 'fin>>projectIDE) caller)))
     
     ;; Return value
     t))
@@ -584,7 +577,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                  (format "Generated signature %s" return)
                                  nil
                                  'projectIDE-signature-generator
-                                 (nconc (list 'projectIDE-signature-generator) caller)))
+                                 (append (list 'projectIDE-signature-generator) caller)))
     
     return))
 
@@ -630,7 +623,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                  (format "Try to find record under %s. Found: %s" path signature)
                                  nil
                                  'projectIDE-find-record-by-path
-                                 (nconc (list 'projectIDE-find-record-by-path) caller)))
+                                 (append (list 'projectIDE-find-record-by-path) caller)))
     
     ;; Return value
     signature))
@@ -683,7 +676,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      (format "Config file corrupt. 'signature' in %s definded more than once." file)
                                                      t
                                                      'projectIDE-configParser
-                                                     (nconc (list 'projectIDE-configParser) caller))
+                                                     (append (list 'projectIDE-configParser) caller))
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-signature project) (trim-string (buffer-substring-no-properties (point) line-end))))
                        ((= counter 1) ;; "^name="
@@ -692,7 +685,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      (format "Config file corrupt. 'name' in %s definded more than once." file)
                                                      t
                                                      'projectIDE-configParser
-                                                     (nconc (list 'projectIDE-configParser) caller))
+                                                     (append (list 'projectIDE-configParser) caller))
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-name project) (trim-string (buffer-substring-no-properties (point) line-end))))
                        ((= counter 2) ;; "^exclude="
@@ -709,7 +702,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                    "Inject feature not availiable for this version."
                                                    t
                                                    'projectIDE-configParser
-                                                   (nconc (list 'projectIDE-configParser) caller))))
+                                                   (append (list 'projectIDE-configParser) caller))))
                       (setq found t))
                 (setq counter (1+ counter))
                 (setq keylist (cdr keylist))))))))
@@ -725,7 +718,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                    (format "Parsed config file %s successfully" file)
                                    nil
                                    'projectIDE-configParser
-                                   (nconc (list 'projectIDE-configParser) caller)))
+                                   (append (list 'projectIDE-configParser) caller)))
       
       ;; Return value
       project)))
@@ -760,10 +753,6 @@ Descrip.:\t Function list calling this function for debug purpose."
              ;; Validate input
              ;; Check for initialization
              (unless (or projectIDE-p (projectIDE-initialize))
-               (projectIDE-message-handle 'Error
-                                          "projectIDE is not initialized."
-                                          nil
-                                          'projectIDE-create)
                (throw 'Error nil))
              ;; Prevent null string project name
              (when (string= projectName "")
@@ -843,15 +832,15 @@ Descrip.:\t Function list calling this function for debug purpose."
     ;; Generate .projectIDE file
     (projectIDE-project-root-creator path
                                      (and projectIDE-debug-mode
-                                          (nconc (list 'projectIDE-new-project) caller)))
+                                          (append (list 'projectIDE-new-project) caller)))
     ;; Create global record
     (projectIDE-create-record project-config
                               (and projectIDE-debug-mode
-                                   (nconc (list 'projectIDE-new-project) caller)))
+                                   (append (list 'projectIDE-new-project) caller)))
     ;; Create individual record
     (projectIDE-create-cache project-config
                              (and projectIDE-debug-mode
-                                  (nconc (list 'projectIDE-new-project) caller)))))
+                                  (append (list 'projectIDE-new-project) caller)))))
 
 (defun projectIDE-project-root-creator (path &optional caller)
   "Create '.projectIDE' at PATH to indicate a project root.
@@ -875,9 +864,9 @@ Descrip.:\t Function list calling this function for debug purpose."
 
   (let* ((file (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
          (project (projectIDE-configParser file (and projectIDE-debug-mode
-                                                     (nconc (list 'projectIDE-root-creator) caller)))) ;; don't use projectIDE-make-projectIDE-project
+                                                     (append (list 'projectIDE-root-creator) caller)))) ;; don't use projectIDE-make-projectIDE-project
          (signature (projectIDE-signature-generator (and projectIDE-debug-mode
-                                                         (nconc (list 'projectIDE-root-creator) caller))))
+                                                         (append (list 'projectIDE-root-creator) caller))))
          (name (projectIDE-project-name project))
          (exclude (projectIDE-project-exclude project))
          (whitelist (projectIDE-project-whitelist project)))
@@ -921,7 +910,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                  (format "Project root created at %s" path)
                                  nil
                                  'projectIDE-root-creator
-                                 (nconc (list 'projectIDE-root-creator) caller)))))
+                                 (append (list 'projectIDE-root-creator) caller)))))
 
 (defun projectIDE-create-record (configfile &optional caller)
   "Create projectIDE-record by reading CONFIGFILE.
@@ -939,7 +928,7 @@ Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
   (let ((project (projectIDE-configParser configfile
                                           (and projectIDE-debug-mode
-                                                         (nconc (list 'projectIDE-create-record) caller))))
+                                                         (append (list 'projectIDE-create-record) caller))))
         (record (make-projectIDE-record)))
     (setf (projectIDE-record-signature record)(projectIDE-project-signature project)
           (projectIDE-record-name record)(projectIDE-project-name project)
@@ -948,14 +937,14 @@ Descrip.:\t Function list calling this function for debug purpose."
           (projectIDE-record-last-modify record) (time-to-days (current-time)))
     (puthash (projectIDE-project-signature project) record projectIDE-runtime-record)
     (fout<<projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record (and projectIDE-debug-mode
-                                                                             (nconc (list 'projectIDE-create-record) caller))))
+                                                                             (append (list 'projectIDE-create-record) caller))))
 
   (when projectIDE-debug-mode
     (projectIDE-message-handle 'Info
                                (format "Project record created for %s" configfile)
                                nil
                                'projectIDE-create-record
-                               (nconc (list 'projectIDE-create-record) caller))))
+                               (append (list 'projectIDE-create-record) caller))))
 
 (defun projectIDE-create-cache (configfile &optional caller)
   "Create individual record by CONFIGFILE.
@@ -972,20 +961,20 @@ Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
   (let* ((cache (make-projectIDE-cache))
          (project (projectIDE-configParser configfile (and projectIDE-debug-mode
-                                                           (nconc (list 'projectIDE-create-cache) caller))))
+                                                           (append (list 'projectIDE-create-cache) caller))))
          (file (concat PROJECTIDE-CACHE-PATH (projectIDE-project-signature project))))
     (setf (projectIDE-cache-project cache) project)
         (unless (file-exists-p file)
           (write-region "" nil file t 'inhibit)
           (fout<<projectIDE file 'cache (and projectIDE-debug-mode
-                                             (nconc (list 'projectIDE-create-record) caller)))))
+                                             (append (list 'projectIDE-create-record) caller)))))
 
   (when projectIDE-debug-mode
     (projectIDE-message-handle 'Info
                                (format "Project cache created for %s" configfile)
                                nil
                                'projectIDE-create-cache
-                               (nconc (list 'projectIDE-create-cache) caller))))
+                               (append (list 'projectIDE-create-cache) caller))))
 
 (defun projectIDE-last-modify (path)
   "Return last modify time from PATH.
@@ -1040,10 +1029,10 @@ Descrip.:\t A single string of regexp to whiltelist excluded result."
               (setq content nil)))
 
           (when content
-            (setq folder-list (nconc
+            (setq folder-list (append
                                folder-list
                                (projectIDE-get-folder-list projectRoot (file-name-as-directory (concat currentPath content)))))
-            (setq folder-list (nconc (list (file-name-as-directory (concat currentPath content))) folder-list)))))
+            (add-to-list 'folder-list (file-name-as-directory (concat currentPath content))))))
       (setq content-list (cdr content-list)))
 
     (when (equal currentPath "")
@@ -1157,7 +1146,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                        (projectIDE-record-name (gethash signature projectIDE-runtime-record)))
                                nil
                                'projectIDE-update-project-config
-                               (nconc (list 'projectIDE-update-project-config) caller)))
+                               (append (list 'projectIDE-update-project-config) caller)))
 
   ;; Return value
   t)
@@ -1205,30 +1194,21 @@ CALLER
 Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
   (interactive)
-  (catch 'Error
-    (unless (or projectIDE-p (projectIDE-initialize))
-      (projectIDE-message-handle 'Error
-                                 "projectIDE not initialized."
+  (let ((signature (gethash (current-buffer) projectIDE-buffer-trace)))
+    (if signature
+        (projectIDE-update-cache-backend signature t )
+      (projectIDE-message-handle 'Warning
+                                 "Current buffer not in project record."
                                  t
                                  'projectIDE-update-cache
-                                 (nconc (list 'projectIDE-update-cache) caller))
-      (throw 'Error nil))
-    
-    (let ((signature (gethash (current-buffer) projectIDE-buffer-trace)))
-      (if signature
-          (projectIDE-update-cache-backend signature t )
-        (projectIDE-message-handle 'Warning
-                                   "Current buffer not in project record."
-                                   t
-                                   'projectIDE-update-cache
-                                   (and projectIDE-debug-mode
-                                        (nconc (list 'projectIDE-update-cache) caller)))))
-    (when projectIDE-debug-mode
-      (projectIDE-message-handle 'Info
-                                 (format "User invoked update project cache for %s" (or (buffer-file-name) "invalid buffer"))
-                                 nil
-                                 'projectIDE-update-cache
-                                 (nconc (list 'projectIDE-update-cache) caller)))))
+                                 (and projectIDE-debug-mode
+                                      (append (list 'projectIDE-update-cache) caller)))))
+  (when projectIDE-debug-mode
+    (projectIDE-message-handle 'Info
+                               (format "User invoked update project cache for %s" (or (buffer-file-name) "invalid buffer"))
+                               nil
+                               'projectIDE-update-cache
+                               (append (list 'projectIDE-update-cache) caller))))
 
 (defun projectIDE-update-cache-backend (signature &optional Message caller)
   "Update cache for the project provided by SIGNATURE.
@@ -1257,7 +1237,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                  Message
                                  'projectIDE-update-cache-backend
                                  (and projectIDE-debug-mode
-                                      (nconc (list 'projectIDE-update-cache-backend) caller)))
+                                      (append (list 'projectIDE-update-cache-backend) caller)))
       (throw 'Error nil))
 
     
@@ -1318,14 +1298,14 @@ Descrip.:\t Function list calling this function for debug purpose."
 
   (let ((cache (gethash signature projectIDE-runtime-cache)))
     (when (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (and projectIDE-debug-mode
-                                                                                 (nconc (list 'projectIDE-update-cache-backend) caller)))
+                                                                                 (append (list 'projectIDE-update-cache-backend) caller)))
       (projectIDE-message-handle 'Info
-                                 (format "Project cache for [%s] updated successfully."
+                                 (format "Project cache for '%s' updated successfully."
                                          (projectIDE-project-name (projectIDE-cache-project cache)))
                                  Message
                                  'projectIDE-update-cache-backend
                                  (and projectIDE-debug-mode
-                                      (nconc (list 'projectIDE-update-cache-backend) caller))))))
+                                      (append (list 'projectIDE-update-cache-backend) caller))))))
 
 (defun projectIDE-index-project (path &optional caller)
   "This is an interactive function to let user indexing a project.
@@ -1345,63 +1325,49 @@ Descrip.:\t Function list calling this function for debug purpose."
   (interactive (list (read-directory-name "Please choose the project root: "
                                           (file-name-directory (or buffer-file-name user-emacs-directory)))))
 
-  (catch 'Error
-    (unless (or projectIDE-p (projectIDE-initialize))
-      (projectIDE-message-handle 'Error
-                                 "projectIDE not initialized."
-                                 t
-                                 'projectIDE-index-project
-                                 (nconc (list 'projectIDE-index-project) caller))
-      (throw 'Error nil))
-    
-    ;; Index project
-    (if (and (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
-             (projectIDE-project-signature (projectIDE-configParser (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)
-                                                                    (and projectIDE-debug-mode
-                                                                         (nconc (list 'projectIDE-index-project) caller)))))
-        (if (yes-or-no-p
-             (concat (projectIDE-message-handle 'Warning
-                                                (format ".projectIDE with signature found at %s" path)
-                                                nil 'projectIDE-index-project)
-                     "\nChoose yes if you want to create a new signature for this project.
+  
+  ;; Index project
+  (if (and (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
+           (projectIDE-project-signature (projectIDE-configParser (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)
+                                                                  (and projectIDE-debug-mode
+                                                                       (append (list 'projectIDE-index-project) caller)))))
+      (if (yes-or-no-p
+           (concat (projectIDE-message-handle 'Warning
+                                              (format ".projectIDE with signature found at %s" path)
+                                              nil 'projectIDE-index-project)
+                   "\nChoose yes if you want to create a new signature for this project.
 Choose no if you want to retain current signature.
 Press C-g to cancel the operation."))
-            (projectIDE-new-project (file-name-as-directory path)
-                                    (and projectIDE-debug-mode
-                                         (nconc (list 'projectIDE-index-project) caller)))
-          (projectIDE-create-record (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)
-                                    (and projectIDE-debug-mode
-                                         (nconc (list 'projectIDE-index-project) caller)))
-          (projectIDE-create-cache (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)
+          (projectIDE-new-project (file-name-as-directory path)
+                                  (and projectIDE-debug-mode
+                                       (append (list 'projectIDE-index-project) caller)))
+        (projectIDE-create-record (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)
+                                  (and projectIDE-debug-mode
+                                       (append (list 'projectIDE-index-project) caller)))
+        (projectIDE-create-cache (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)
+                                 (and projectIDE-debug-mode
+                                      (append (list 'projectIDE-index-project) caller))))
+    (projectIDE-new-project (file-name-as-directory path)
+                            (and projectIDE-debug-mode
+                                 (append (list 'projectIDE-index-project) caller))))
+  
+  ;; Scan through buffers to check whether they are memeber of newly indexed project
+  (let ((buffers (buffer-list)))
+    (while (car-safe buffers)
+      (projectIDE-identify-project (car buffers)
                                    (and projectIDE-debug-mode
-                                        (nconc (list 'projectIDE-index-project) caller))))
-      (projectIDE-new-project (file-name-as-directory path)
-                              (and projectIDE-debug-mode
-                                   (nconc (list 'projectIDE-index-project) caller))))
-    
-    ;; Scan through buffers to check whether they are memeber of newly indexed project
-    (let ((buffers (buffer-list)))
-      (while (car-safe buffers)
-        (projectIDE-identify-project (car buffers)
-                                     (and projectIDE-debug-mode
-                                          (nconc (list 'projectIDE-index-project) caller)))
-        (setq buffers (cdr buffers))))
-    
-    (projectIDE-message-handle 'Info
-                               (format "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
-                                       (projectIDE-project-name
-                                        (projectIDE-configParser (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
-                                       path)
-                               t
-                               'projectIDE-index-project
-                               (and projectIDE-debug-mode
-                                    (nconc (list 'projectIDE-index-project) caller)))))
-
-(defun projectIDE-cache-new-file ()
-  "This function is designed to add to before-save-hook.
-It detects newly created file and update projectIDE-runtime-cache
-if the file is a member of a project."
-  (interactive))
+                                        (append (list 'projectIDE-index-project) caller)))
+      (setq buffers (cdr buffers))))
+  
+  (projectIDE-message-handle 'Info
+                             (format "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
+                                     (projectIDE-project-name
+                                      (projectIDE-configParser (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
+                                     path)
+                             t
+                             'projectIDE-index-project
+                             (and projectIDE-debug-mode
+                                  (append (list 'projectIDE-index-project) caller))))
 
 (defun projectIDE-identify-project (&optional buffer caller)
   "This function check whether BUFFER is a indexed project.
@@ -1443,7 +1409,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       (when (buffer-file-name buffer)
         (setq signature (projectIDE-find-record-by-path (buffer-file-name buffer)
                                                         (and projectIDE-debug-mode
-                                                          (nconc (list 'projectIDE-identify-project) caller)))))
+                                                          (append (list 'projectIDE-identify-project) caller)))))
       (when signature
         (setq found t)))
     
@@ -1460,18 +1426,18 @@ Descrip.:\t Function list calling this function for debug purpose."
             (let* ((projectRoot (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
                    (project (projectIDE-configParser projectRoot
                                                      (and projectIDE-debug-mode
-                                                          (nconc (list 'projectIDE-identify-project) caller)))))
+                                                          (append (list 'projectIDE-identify-project) caller)))))
               (if (projectIDE-project-signature project)
                   ;; found .projectIDE with signature
                   (progn
                     (setq signature (projectIDE-project-signature project))
                     (projectIDE-create-record projectRoot
                                               (and projectIDE-debug-mode
-                                                   (nconc (list 'projectIDE-identify-project) caller)))
+                                                   (append (list 'projectIDE-identify-project) caller)))
                     (unless (file-exists-p (concat PROJECTIDE-CACHE-PATH signature))
                       (projectIDE-create-cache projectRoot
                                                (and projectIDE-debug-mode
-                                                    (nconc (list 'projectIDE-identify-project) caller))))
+                                                    (append (list 'projectIDE-identify-project) caller))))
                     (setq found t))
                 ;; found .projectIDE without signature
                 (if (y-or-n-p
@@ -1481,10 +1447,10 @@ Descrip.:\t Function list calling this function for debug purpose."
                       nil
                       'projectIDE-identify-project
                       (and projectIDE-debug-mode
-                           (nconc (list 'projectIDE-identify-project) caller))))
+                           (append (list 'projectIDE-identify-project) caller))))
                     (progn
                       (projectIDE-new-project path (and projectIDE-debug-mode
-                                                        (nconc (list 'projectIDE-identify-project) caller)))
+                                                        (append (list 'projectIDE-identify-project) caller)))
                       (setq signature (projectIDE-find-record-by-path (buffer-file-name buffer)))
                       (setq found t)
                       (projectIDE-message-handle
@@ -1494,13 +1460,13 @@ Descrip.:\t Function list calling this function for debug purpose."
                        t
                        'projectIDE-identify-project
                        (and projectIDE-debug-mode
-                            (nconc (list 'projectIDE-identify-project) caller))))
+                            (append (list 'projectIDE-identify-project) caller))))
                   (projectIDE-message-handle 'Info
                                              "File opened without indexing."
                                              t
                                              'projectIDE-identify-project
                                              (and projectIDE-debug-mode
-                                                  (nconc (list 'projectIDE-identify-project) caller)))
+                                                  (append (list 'projectIDE-identify-project) caller)))
                   (setq search-countdown -1)))))
           
           (setq search-countdown (1- search-countdown))
@@ -1511,35 +1477,25 @@ Descrip.:\t Function list calling this function for debug purpose."
           (let ((project (projectIDE-configParser
                           (concat (projectIDE-record-path (gethash signature projectIDE-runtime-record)) PROJECTIDE-PROJECTROOT-IDENTIFIER)
                           (and projectIDE-debug-mode
-                               (nconc (list 'projectIDE-identify-project) caller))))
-                (cache nil)
-                (flag-update-cache nil))
+                               (append (list 'projectIDE-identify-project) caller))))
+                (cache))
 
             ;; Add to opened project if it is not there yet
             (unless (gethash signature projectIDE-opened-project)
-              (puthash signature project projectIDE-opened-project)
-              (and projectIDE-open-file-update-cache (setq flag-update-cache t)))
+              (puthash signature project projectIDE-opened-project))
 
             ;; Create project cache if it is not ther yet
             (unless (gethash signature projectIDE-runtime-cache)
               (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (and projectIDE-debug-mode
-                                                                                    (nconc (list 'projectIDE-identify-project) caller)))
-              (puthash signature cache projectIDE-runtime-cache))
-
-
-            (setq project (gethash signature projectIDE-opened-project))
-            (setq cache (gethash signature projectIDE-runtime-cache))
+                                                                                    (append (list 'projectIDE-identify-project) caller)))
+              (puthash signature cache projectIDE-runtime-cache)))
           
-            ;; (let ((project (gethash signature projectIDE-opened-project))
-            ;;       (cache (gethash signature projectIDE-runtime-cache)))
+          (let ((project (gethash signature projectIDE-opened-project))
+                (cache (gethash signature projectIDE-runtime-cache)))
             ;; Add to opened buffer in project cache
             (setf (projectIDE-cache-opened-buffer cache) (projectIDE-add-to-list (projectIDE-cache-opened-buffer cache) (buffer-file-name buffer)))
             ;; Add to buffer-trace
-            (puthash (or buffer (current-buffer)) signature projectIDE-buffer-trace)
-
-            ;; Update project cache
-            (when flag-update-cache
-              (projectIDE-update-cache 'projectIDE-identify-project)))
+            (puthash (or buffer (current-buffer)) signature projectIDE-buffer-trace))
           
           ;; Change last modify time in record
           (setf (projectIDE-record-last-modify (gethash signature projectIDE-runtime-record))
@@ -1548,20 +1504,20 @@ Descrip.:\t Function list calling this function for debug purpose."
           (unless buffer
             (projectIDE-message-handle
              'Info
-             (format "Opened file from project [%s]" (projectIDE-project-name (gethash signature projectIDE-opened-project)))
+             (format "Opened file from project '%s'" (projectIDE-project-name (gethash signature projectIDE-opened-project)))
              t
              'projectIDE-identify-project
              (and projectIDE-debug-mode
-                  (nconc (list 'projectIDE-identify-project) caller)))))
+                  (append (list 'projectIDE-identify-project) caller)))))
 
-        (when (and projectIDE-debug-mode (not found))
-          (projectIDE-message-handle
-           'Info
-           (format "Opened buffer '%s' is not a indexed project." (or (buffer-file-name) "invalid buffer"))
-           nil
-           'projectIDE-identify-project
-           (and projectIDE-debug-mode
-                (nconc (list 'projectIDE-identify-project) caller))))))
+          (when (and projectIDE-debug-mode (not found))
+            (projectIDE-message-handle
+             'Info
+             (format "Opened buffer '%s' is not a indexed project." (or (buffer-file-name) "invalid buffer"))
+             nil
+             'projectIDE-identify-project
+             (and projectIDE-debug-mode
+                  (append (list 'projectIDE-identify-project) caller))))))
 
 (defun projectIDE-kill-project-buffer ()
   "Remove opened-buffer from cache when killing a project buffer.
@@ -1608,13 +1564,13 @@ Descrip.:\t Function list calling this function for debug purpose."
       ;; Try to load cache to projectIDE-runtime-cache if it is not yet opened
       (unless (or (gethash signature projectIDE-runtime-cache)
                   (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (and projectIDE-debug-mode
-                                                                                        (nconc (list 'projectIDE-get-project-file-list) caller))))
+                                                                                        (append (list 'projectIDE-get-project-file-list) caller))))
         (when projectIDE-debug-mode
           (projectIDE-message-handle 'Warning
                                      (format "Unable to read cache %s" (concat PROJECTIDE-CACHE-PATH signature))
                                      nil
                                      'projectIDE-get-project-file-list
-                                     (nconc (list 'projectIDE-get-project-file-list) caller)))
+                                     (append (list 'projectIDE-get-project-file-list) caller)))
         (throw 'Error nil))
 
       ;; If it cache is readen from file, flag temp-open
@@ -1633,7 +1589,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                (temp-file-list (gethash folder cached-file-hash)))
           (dolist (element temp-file-list)
             (message (concat folder element))
-            (setq return-file-list (nconc return-file-list (list (concat folder element))))))
+            (setq return-file-list (append return-file-list (list (concat folder element))))))
           (setq cached-folder-list (cdr cached-folder-list)))
       
       (when temp-open
@@ -1644,7 +1600,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                    (format "Getting file list for project %s" signature)
                                    nil
                                    'projectIDE-get-project-file-list
-                                   (nconc (list 'projectIDE-get-project-file-list) caller)))
+                                   (append (list 'projectIDE-get-project-file-list) caller)))
 
       ;; Return value
       return-file-list)))
@@ -1654,62 +1610,38 @@ Descrip.:\t Function list calling this function for debug purpose."
 The file list contains files from project of current buffer.
 When PREFIX is provided, the file list contains files from all opened projects."
   (interactive "p")
-  (catch 'Error
+  (let ((source-signature (list (gethash (current-buffer) projectIDE-buffer-trace)))
+        (prompt-file-list nil)
+        (project-prefix nil)
+        (projectRoot nil))
 
-    (unless (or projectIDE-p (projectIDE-initialize))
-      (projectIDE-message-handle 'Error
-                                 "projectIDE not initialized."
-                                 t
-                                 'projectIDE-open-file)
-      (throw 'Error nil))
-    
-    (let ((source-signature (list (gethash (current-buffer) projectIDE-buffer-trace)))
-          (prompt-file-list nil)
-          (project-prefix nil)
-          (projectRoot nil))
+    ;; When prefixed, open file from all current opened project.
+    (unless (= prefix 1)
+      (setq source-signature (hash-table-keys projectIDE-opened-project)))
 
-      ;; When prefixed, open file from all current opened project.
-      (unless (= prefix 1)
-        (setq source-signature (hash-table-keys projectIDE-opened-project)))
+    ;; Determined if project prefix should be used
+    (when (and projectIDE-use-project-prefix (= (length source-signature) 1))
+      (setq project-prefix
+            (concat
+             "["
+             (projectIDE-project-name (gethash (car source-signature) projectIDE-opened-project))
+             "]")))
 
-      (unless (car-safe source-signature)
-        (projectIDE-message-handle 'Warning
-                                   "Current buffer is not an indexed project."
-                                   t
-                                   'projectIDE-open-file)
-        (throw 'Error nil))
+    (while (car-safe source-signature)
+      (setq projectRoot )
+      (dolist (element (projectIDE-get-project-file-list (car source-signature)))
+        (setq prompt-file-list
+              (nconc prompt-file-list
+                (list (concat (file-name-as-directory (or project-prefix projectRoot)) element)))))
+      (setq source-signature (cdr source-signature)))
 
-      ;; Determined if project prefix should be used
-      (when (and projectIDE-use-project-prefix (= (length source-signature) 1))
-        (setq project-prefix
-              (concat
-               "["
-               (projectIDE-project-name (gethash (car source-signature) projectIDE-opened-project))
-               "]")))
+    (projectIDE-prompt "Choose file" prompt-file-list)
 
-      ;; Create promt-file-list from different source
-      (while (car-safe source-signature)
-        (setq projectRoot (projectIDE-record-path (gethash (car source-signature) projectIDE-runtime-record)))
-        (dolist (element (projectIDE-get-project-file-list (car source-signature)))
-          (setq prompt-file-list
-                (nconc prompt-file-list
-                       (list (concat (file-name-as-directory (or project-prefix projectRoot)) element)))))
-        (setq source-signature (cdr source-signature)))
+    ))
 
-      
-      (let ((path (projectIDE-prompt "Open file: " prompt-file-list)))
-        (when project-prefix
-          (string-match (file-name-as-directory project-prefix) path)
-          (setq path (substring path (match-end 0) nil)))
 
-        (unless (file-exists-p path)
-          (projectIDE-message-handle 'Warning
-                                     (format "%s no longer exist.\nYou may need to call projectIDE-update-cache first." path)
-                                     t
-                                     'projectIDE-open-file)
-          (throw 'Error nil))
 
-        (find-file path)))))
+
 
 (defun projectIDE-get-project-list ()
   "Return a list of project from projectIDE-runtime-record."
@@ -1735,22 +1667,13 @@ CALLER
 Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
   (interactive)
+  (let* ((choice (projectIDE-prompt "Choose project: " (projectIDE-get-project-list)))
+         (path (progn
+                 (string-match projectIDE-name-path-seperator choice)
+                 (substring choice (match-end 0) nil)))
+         (signature (projectIDE-find-record-by-path path)))
 
-  (catch 'Error
-    (unless (or projectIDE-p (projectIDE-initialize))
-      (projectIDE-message-handle 'Error
-                                 "projectIDE not initialized."
-                                 t
-                                 'projectIDE-open-project
-                                 (nconc (list 'projectIDE-open-project) caller))
-      (throw 'Error nil))
-    
-    (let* ((choice (projectIDE-prompt "Choose project: " (projectIDE-get-project-list)))
-           (path (progn
-                   (string-match projectIDE-name-path-seperator choice)
-                   (substring choice (match-end 0) nil)))
-           (signature (projectIDE-find-record-by-path path)))
-      
+    (catch 'Error
       ;; Check if any unexpected result from user prompt
       (unless (and (file-exists-p path) (file-directory-p path))
         (projectIDE-message-handle 'Error
@@ -1759,7 +1682,7 @@ If it is unexpected, try modifying `projectIDE-name-path-seperator'" path)
                                    t
                                    'projectIDE-open-project
                                    (and projectIDE-debug-mode
-                                        (nconc (list 'projectIDE-open-project) caller)))
+                                        (append (list 'projectIDE-open-project) caller)))
         (throw 'Error nil))
 
       ;; Check whether project has been opened
@@ -1771,7 +1694,7 @@ If it is unexpected, try modifying `projectIDE-name-path-seperator'" path)
                                    t
                                    'projectIDE-open-project
                                    (and projectIDE-debug-mode
-                                        (nconc (list 'projectIDE-open-project) caller)))
+                                        (append (list 'projectIDE-open-project) caller)))
         (find-file (car (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))))
         (throw 'Error nil))
       
@@ -1786,12 +1709,12 @@ If you moved the project, you can use `projectIDE-index-project' to reindex it."
                                    t
                                    'projectIDE-open-project
                                    (and projectIDE-debug-mode
-                                        (nconc (list 'projectIDE-open-project) caller)))
+                                        (append (list 'projectIDE-open-project) caller)))
         (throw 'Error nil))
 
       (let* ((projectRoot (concat (projectIDE-record-path (gethash signature projectIDE-runtime-record)) PROJECTIDE-PROJECTROOT-IDENTIFIER))
              (project (projectIDE-configParser projectRoot (and projectIDE-debug-mode
-                                                                (nconc (list 'projectIDE-open-project) caller))))
+                                                                (append (list 'projectIDE-open-project) caller))))
              (cache nil))
 
         ;; check project parse successfully
@@ -1802,7 +1725,7 @@ If you moved the project, you can use `projectIDE-index-project' to reindex it."
            t
            'projectIDE-open-project
            (and projectIDE-debug-mode
-                (nconc (list 'projectIDE-open-project) caller)))
+                (append (list 'projectIDE-open-project) caller)))
           (throw 'Error nil))
         
         (puthash signature project projectIDE-opened-project)
@@ -1813,14 +1736,14 @@ If you moved the project, you can use `projectIDE-index-project' to reindex it."
 
         ;; check if cache load successfully
         (unless (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (and projectIDE-debug-mode
-                                                                                      (nconc (list 'projectIDE-open-project) caller)))
+                                                                                      (append (list 'projectIDE-open-project) caller)))
           (projectIDE-message-handle 'Error
                                      (format "Unable to load project cache: %s %s"
                                              (projectIDE-project-name project) signature)
                                      t
                                      'projectIDE-open-project
                                      (and projectIDE-debug-mode
-                                          (nconc (list 'projectIDE-open-project) caller)))
+                                          (append (list 'projectIDE-open-project) caller)))
           (throw 'Error nil))
 
         (when cache
@@ -1909,60 +1832,41 @@ projectIDE will use default completion instead."
      (t (completing-read prompt choices nil nil initial-input))))
 
 (defun projectIDE-initialize ()
-  "Initialize projectIDE."
+  "ProjectIDE-initialize."
   (interactive)
-  (catch 'Error
-    (when projectIDE-p
-      (projectIDE-message-handle 'Warning
-                                 "projectIDE has already initialized."
-                                 nil
-                                 'projectIDE-initialize)
-      (throw 'Error nil))
-    ;; Check whether projectIDE database folder exist
-    (unless (file-exists-p projectIDE-database-path)
-      (make-directory projectIDE-database-path))
-    ;; Check global RECORD file exist
-    (unless (file-exists-p PROJECTIDE-RECORD-FILE)
-      (write-region "" nil PROJECTIDE-RECORD-FILE t 'inhibit))
-    ;; Check cache folder exist
-    (unless (file-exists-p PROJECTIDE-CACHE-PATH)
-      (make-directory PROJECTIDE-CACHE-PATH))
-    ;; Check log folder exist
-    (unless (file-exists-p PROJECTIDE-LOG-PATH)
-      (make-directory PROJECTIDE-LOG-PATH))
+  ;; Check whether projectIDE database folder exist
+  (unless (file-exists-p projectIDE-database-path)
+    (make-directory projectIDE-database-path))
+  ;; Check global RECORD file exist
+  (unless (file-exists-p PROJECTIDE-RECORD-FILE)
+    (write-region "" nil PROJECTIDE-RECORD-FILE t 'inhibit))
+  ;; Check cache folder exist
+  (unless (file-exists-p PROJECTIDE-CACHE-PATH)
+    (make-directory PROJECTIDE-CACHE-PATH))
+  ;; Check log folder exist
+  (unless (file-exists-p PROJECTIDE-LOG-PATH)
+    (make-directory PROJECTIDE-LOG-PATH))
 
-    (if (fin>>projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record)
-        (progn
-          (unless projectIDE-runtime-record
-            (setq projectIDE-runtime-record (make-hash-table :test 'equal :size 40)))
-          (setq projectIDE-opened-project (make-hash-table :test 'equal :size 20)
-                projectIDE-runtime-cache (make-hash-table :test 'equal :size 20)
-                projectIDE-buffer-trace (make-hash-table))
-          (projectIDE-message-handle 'Info
-                                     "projectIDE starts successfully."
-                                     t
-                                     'projectIDE-initialize)
-          (add-hook 'find-file-hook 'projectIDE-identify-project)
-          (add-hook 'kill-buffer-hook 'projectIDE-kill-project-buffer)
-          (setq projectIDE-p t))
-      (projectIDE-message-handle 'Error
-                                 (format "projectIDE starts fail. Unable to read record file at %s" PROJECTIDE-RECORD-FILE)
-                                 t
-                                 'projectIDE-initialize))
-    ;; Return value
-    projectIDE-p))
-
-(defun projectIDE-terminate ()
-  "Terminate projectIDE"
-  (interactive)
-  (when projectIDE-p
-    (remove-hook 'find-file-hook 'projectIDE-identify-project)
-    (remove-hook 'kill-buffer-hook 'projectIDE-kill-project-buffer)
-    (setq projectIDE-runtime-record nil 
-          projectIDE-opened-project nil
-          projectIDE-runtime-cache nil
-          projectIDE-buffer-trace nil
-          projectIDE-p nil)))
+  (if (fin>>projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record)
+      (progn
+        (unless projectIDE-runtime-record
+          (setq projectIDE-runtime-record (make-hash-table :test 'equal :size 40)))
+        (setq projectIDE-opened-project (make-hash-table :test 'equal :size 20))
+        (setq projectIDE-runtime-cache (make-hash-table :test 'equal :size 20))
+        (setq projectIDE-buffer-trace (make-hash-table))
+        (projectIDE-message-handle 'Info
+                                   "projectIDE starts successfully."
+                                   t
+                                   'projectIDE-initialize)
+        (add-hook 'find-file-hook 'projectIDE-identify-project)
+        (add-hook 'kill-buffer-hook 'projectIDE-kill-project-buffer)
+        (setq projectIDE-p t))
+    (projectIDE-message-handle 'Error
+                               (format "projectIDE starts fail. Unable to read record file at %s" PROJECTIDE-RECORD-FILE)
+                               t
+                               'projectIDE-initialize))
+;; Return value
+  projectIDE-p)
 
 ;;; Debug
 (defun projectIDE-print-variable (var)
@@ -1979,27 +1883,13 @@ Only for debug purpose."
   "An interative function to turn on debug mode.
 Debug mode only print extra infomation to log file."
   (interactive)
-  (catch 'Error
-    (unless (or projectIDE-p (projectIDE-initialize))
-      (projectIDE-message-handle 'Error
-                                 "projectIDE not initialized."
-                                 t
-                                 'projectIDE-debug-mode-on)
-      (throw 'Error nil))
-    (setq projectIDE-debug-mode t)))
+  (setq projectIDE-debug-mode t))
 
 (defun projectIDE-debug-mode-off ()
   "An interative function to turn off debug mode.
 Debug mode only print extra infomation to log file."
   (interactive)
-  (catch 'Error
-    (unless (or projectIDE-p (projectIDE-initialize))
-      (projectIDE-message-handle 'Error
-                                 "projectIDE not initialized."
-                                 t
-                                 'projectIDE-debug-mode-off)
-      (throw 'Error nil))
-    (setq projectIDE-debug-mode nil)))
+  (setq projectIDE-debug-mode nil))
 
 (provide 'projectIDE)
 ;;; projectIDE.el ends here
