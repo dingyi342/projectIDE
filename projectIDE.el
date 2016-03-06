@@ -33,7 +33,6 @@
 
 ;;; code:
 (require 'cl-lib)
-(require 'fdex)
 (require 'projectIDE-header)
 (require 'projectIDE-debug)
 (require 'projectIDE-fstream)
@@ -75,19 +74,20 @@ Descrip.:\t Function list calling this function for debug purpose."
         (goto-char 1)
 
         ;; Search keys
-        (while (search-forward-regexp projectIDE-default-config-key-regexp-string nil t)
+        (while (search-forward-regexp projectIDE-config-key-string nil t)
           (save-excursion
 
             ;; Identify key
             (beginning-of-line)
-            (let ((found nil)
-                  (line-end (line-end-position))
-                  (keylist projectIDE-default-config-key)
-                  (counter 0))
-              (while (and (not found) (car-safe keylist))
+            (let ((line-end (line-end-position))
+                  (keylist projectIDE-config-key)
+                  (counter 0)
+                  found)
+              (while (and (not found) (car keylist))
                 (if (search-forward-regexp (car keylist) line-end t)
                     (progn
                       (cond
+                       
                        ((= counter 0) ;; "^signature="
                         (when (projectIDE-project-signature project)
                           (projectIDE-message-handle 'Error
@@ -96,7 +96,8 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      'projectIDE-parse-config
                                                      (nconc (list 'projectIDE-parse-config) caller))
                           (throw 'parse-error nil))
-                        (setf (projectIDE-project-signature project) (trim-string (buffer-substring-no-properties (point) line-end))))
+                        (setf (projectIDE-project-signature project) (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
+                       
                        ((= counter 1) ;; "^name="
                         (when (projectIDE-project-name project)
                           (projectIDE-message-handle 'Error
@@ -105,15 +106,18 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      'projectIDE-parse-config
                                                      (nconc (list 'projectIDE-parse-config) caller))
                           (throw 'parse-error nil))
-                        (setf (projectIDE-project-name project) (trim-string (buffer-substring-no-properties (point) line-end))))
+                        (setf (projectIDE-project-name project) (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
+
                        ((= counter 2) ;; "^exclude="
                         (let ((exclude-list (split-string (buffer-substring-no-properties (point) line-end))))
                           (setf (projectIDE-project-exclude project)
                                 (projectIDE-append (projectIDE-project-exclude project) exclude-list))))
+
                        ((= counter 3) ;; "^whitelist="
                         (let ((whitelist (split-string (buffer-substring-no-properties (point) line-end))))
                           (setf (projectIDE-project-whitelist project)
                                 (projectIDE-append (projectIDE-project-whitelist project) whitelist))))
+
                        ((= counter 4) ;; "^cachemode="
                         (when (projectIDE-project-cachemode project)
                           (projectIDE-message-handle 'Error
@@ -122,16 +126,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      'projectIDE-parse-config
                                                      (nconc (list 'projectIDE-parse-config) caller))
                           (throw 'parse-error nil)))
-                       ((= counter 5) ;; "^cachemode="
-                        (when (projectIDE-project-cachemode project)
-                          (projectIDE-message-handle 'Error
-                                                     (format "Config file corrupt. 'cachemode' in %s definded more than once." file)
-                                                     errormessage
-                                                     'projectIDE-parse-config
-                                                     (nconc (list 'projectIDE-parse-config) caller))
-                          (throw 'parse-error nil))
-                        (setf (projectIDE-cachemode project) (string-to-int (trim-string (buffer-substring-no-properties (point) line-end)))))
-                       ((= counter 6) ;; "^module="
+                       ((= counter 5) ;; "^module="
                         ;; not implemented
                         ))
                         
@@ -156,13 +151,6 @@ Descrip.:\t Function list calling this function for debug purpose."
                                    (nconc (list 'projectIDE-parse-config) caller)))
       
       project)))
-
-;; (defun projectIDE-validate-config (&optional file errormessage caller)
-
-;;   (interactive "p")
-  
-;;   )
-
 
 
 ;; Indexing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -248,6 +236,7 @@ Descrip.:\t Path to project root.
 CALLER
 Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
+
   ;; Generate .projectIDE if not exist
   (unless (memq PROJECTIDE-PROJECTROOT-IDENTIFIER (directory-files path))
     (write-region "" nil (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER) t 'inhibit))
@@ -424,28 +413,42 @@ CALLER
 Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
 
-  (let ((config (projectIDE-get-config-file-path signature)))
-    (if config
-        (if (time-less-p (projectIDE-get-config-update-time signature)(fdex-modify-time config))
-            t
-          nil)
+  (catch 'Error
+    (unless (projectIDE-get-cache signature)
+      (projectIDE-message-handle 'Warning
+                                 (format "Project cache for %s not in projectIDE-runtime-cache." signature)
+                                 nil
+                                 'projectIDE-config-need-update?
+                                 (and projectIDE-debug-mode (nconc (list 'projectIDE-config-need-update?) caller)))
+      (throw 'Error nil))
+    
+    (let ((config (projectIDE-get-config-file-path signature)))
+      (if config
+          (if (time-less-p (projectIDE-get-config-update-time signature)(fdex-modify-time config))
+              t
+            nil)
 
-      (when projectIDE-debug-mode
-        (projectIDE-message-handle 'Warning
-                               (format "Unable to find project config file for %s" signature)
-                               nil
-                               'projectIDE-config-need-update?
-                               (nconc (list 'projectIDE-config-need-update?) caller)))
-      nil)))
+        (when projectIDE-debug-mode
+          (projectIDE-message-handle 'Warning
+                                     (format "Unable to find project config file for %s" signature)
+                                     nil
+                                     'projectIDE-config-need-update?
+                                     (nconc (list 'projectIDE-config-need-update?) caller)))
+        nil))))
 
 (defun projectIDE-filter-changed? (signature &caller caller)
 
   (catch 'Error
     (unless (projectIDE-get-cache signature)
+      (projectIDE-message-handle 'Warning
+                                 (format "Project cache for %s not in projectIDE-runtime-cache." signature)
+                                 nil
+                                 'projectIDE-filter-changed?
+                                 (and projectIDE-debug-mode (nconc (list 'projectIDE-filter-changed?) caller)))
       (throw 'Error nil))
     
-    (if (and (equal (projectIDE-get-exclude-from-project signature) (projectIDE-get-exclude-from-cache signature))
-             (equal (projectIDE-get-whitelist-from-project signature) (projectIDE-get-whitelist-from-cache signature)))
+    (if (and (equal (projectIDE-get-project-exclude signature) (projectIDE-get-cache-exclude signature))
+             (equal (projectIDE-get-project-whitelist signature) (projectIDE-get-cache-whitelist signature)))
         nil
       t)))
 
@@ -494,7 +497,8 @@ Descrip.:\t Function list calling this function for debug purpose."
           (fout<<projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record
                             (and projectIDE-debug-mode
                                  (nconc (list 'projectIDE-update-project-config) caller))))
-        (projectIDE-set-project-in-cache project signature))
+        
+        (projectIDE-set-cache-project signature project))
 
   (when projectIDE-debug-mode
     (projectIDE-message-handle 'Info
@@ -534,12 +538,15 @@ Descrip.:\t Function list calling this function for debug purpose."
                                         (nconc (list 'projectIDE-update-cache-backend) caller)))
         (throw 'Error nil)))
 
-          
+    (when (projectIDE-filter-changed? signature (and projectIDE-debug-mode
+                                                     (nconc (list 'projectIDE-update-cache-backend) caller)))
+      (projectIDE-set-cache-filter signature)
+      (projectIDE-set-file-cache signature)
+      (projectIDE-unset-file-cache-state signature))
     
-
-    
-    (fdex-update (projectIDE-cache-file-cache cache)))
-  t)
+    (fdex-update (projectIDE-get-cache signature))
+    (projectIDE-set-file-cache-state signature)
+  t))
 
 
 

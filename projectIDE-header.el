@@ -1,40 +1,241 @@
+;;; projectIDE-header.el --- projectIDE header file
+;;
+;; Copyright (C) 2015-2016 Mola-T
+;; Author: Mola-T <Mola@molamola.xyz>
+;; URL: https://github.com/mola-T/projectIDE
+;; Version: 1.0
+;; Package-Requires: ((cl-lib.el "0.5") (fdex.el "1.0"))
+;; Keywords: project, convenience
+;;
+;;; License:
+;; This file is NOT part of GNU Emacs.
+;;
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 3, or (at your option)
+;; any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs; see the file COPYING.  If not, write to the
+;; Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+;; Boston, MA 02110-1301, USA.
+;;
+;;; Commentary:
+;; This files provides variables and funtions supporting all projectIDE-X.el
+;;
+;;
+;;; code:
 (require 'cl-lib)
+(require 'fdex)
 
-;;; projectIDE Group
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; General function
+;;fff (defun projectIDE-concat-regexp (list))
+;;fff (defun projectIDE-trim-string (string))
+;;fff (defun projectIDE-add-to-list (list element))
+;;fff (defun projectIDE-append (list1 list2))
+
+(defun projectIDE-concat-regexp (list)
+  "Return a single regexp string from a LIST of separated regexp.
+
+Return
+Type:\t\t string
+Descrip.:\t A single string of combined regexp.
+\t\t\t If LIST is empty, return nil.
+
+LIST
+Type:\t\t string list
+Descrip.:\t A string list of regexp."
+  
+  (let (regexp)
+    (dolist (val list regexp)
+      (if regexp
+          (setq regexp (concat val "\\|" regexp))
+        (setq regexp val)))))
+
+(defun projectIDE-trim-string (string)
+  "Return trimmed leading and tailing whitespace from STRING.
+If the return string is a null string, return nil instead.
+
+Return
+Type:\t\t string or nil
+Descrip.:\t Trimmed string or nil if blank string.
+
+STRING
+Type:\t\t string
+Descrip.:\t String to be trimmed."
+  (let ((return-string
+         (replace-regexp-in-string (rx (or (: bos (* (any " \t\n")))
+                                           (: (* (any " \t\n")) eos)))
+                                   ""
+                                   string)))
+    ;; Return value
+    (if (string= return-string "")
+        nil
+      return-string)))
+
+(defun projectIDE-add-to-list (list element)
+  "Implements `add-to-list'(LIST ELEMENT) with `cl-pushnew'.
+Adds ELEMENT to  LIST if it isn't there yet.
+It handles all situation when LIST or ELEMENT is nil.
+This function does not modify the original list.
+Instead, it returns a new list.
+In addition, it accepts non-symbol LIST.
+
+This function is expensive in term of efficency.
+Avoid to use in heavy loop.
+
+Return
+Type:\t\t list
+Descrip.:\t New list with ELEMENT add to LIST
+
+LIST
+Type:\t\t list of any type
+Descrip.:\t List to be checked and appended to.
+
+ELEMENT
+Type:\t\t same type of LIST element
+Descrip.:\t Add to LIST if ELEMENT isn't there yet."
+  (let ((newlist (copy-tree list)))
+    (if newlist
+        (when element
+          (setq newlist (cl-pushnew element newlist :test 'equal)))
+      (when element
+        (setq newlist (list element))))
+    newlist))
+
+(defun projectIDE-append (list1 list2)
+  "Return a combined list of LIST1 and LIST2 and prevent duplication.
+It accepts non-symbol LIST.
+
+This function is expensive in term of efficency.
+Avoid to use in heavy loop.
+
+Return
+Type:\t\t list
+Descrip.:\t Combined list of LIST1 and LIST2.
+
+LIST1/LIST2
+Type:\t list of any type
+Descrip.:\t List to be combined."
+  (let (newlist)
+    (setq newlist (append list1 list2))
+    (cl-remove-duplicates newlist :test 'equal)))
+
+;; record object ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; projectIDE group
 (defgroup projectIDE nil
   "Managing projects like an IDE."
   :tag "projectIDE"
   :group 'tools
   :group 'convenience)
+
 (defgroup projectIDE-global nil
   "Global setting for all projects."
   :tag "Enviroment Values"
   :group 'projectIDE)
+
 (defgroup projectIDE-config-file nil
   "Setting for loading individual project config file."
   :tag "Config file settings"
   :group 'projectIDE)
+
 (defgroup projectIDE-project-creation nil
   "Setting for creating project."
   :tag "Project creation"
   :group 'projectIDE)
+
 (defgroup projectIDE-project-opening nil
   "Setting for opening project behaviour."
   :tag "Project opening"
   :group 'projectIDE)
+
 (defgroup projectIDE-file-opening nil
   "Setting for opening project file behaviour."
   :tag "File opening"
   :group 'projectIDE)
+
 (defgroup projectIDE-hook nil
   "All available projectIDE hooks."
   :tag "Hook"
   :group 'projectIDE)
 
-;;; Variables
+;;; General function ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Environmental Variable
-(defconst PROJECTIDE-PROJECTROOT-IDENTIFIER ".projectIDE"
-  "The root file indicator.")
+;;vvv (defcustom projectIDE-database-path)
+;;vvv (defconst PROJECTIDE-PROJECTROOT-IDENTIFIER)
+;;vvv (defconst PROJECTIDE-RECORD-FILE)
+;;vvv (defconst PROJECTIDE-LOG-PATH)
+;;vvv (defconst PROJECTIDE-CACHE-PATH)
+;;vvv (defcustom projectIDE-completion-system)
 
 (defcustom projectIDE-database-path
   (file-name-as-directory
@@ -44,6 +245,9 @@
   :type 'directory
   :group 'projectIDE-global)
 
+(defconst PROJECTIDE-PROJECTROOT-IDENTIFIER ".projectIDE"
+  "The root file indicator.")
+
 (defconst PROJECTIDE-RECORD-FILE
   (concat projectIDE-database-path "RECORD")
   "Type: string\nFilename for project record.")
@@ -51,7 +255,6 @@
 (defconst PROJECTIDE-LOG-PATH
   (file-name-as-directory (concat projectIDE-database-path "LOG"))
   "Type: string\nFilename for projectIDE log file.")
-
 
 (defconst PROJECTIDE-CACHE-PATH
   (file-name-as-directory (concat projectIDE-database-path "CACHE"))
@@ -72,8 +275,39 @@
           (const :tag "Default" default))
   :group 'projectIDE-global)
 
+;; Environmental Variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Project config file variable
-(defconst projectIDE-default-config-key
+;;vvv (defconst projectIDE-default-config-key)
+;;vvv (defconst projectIDE-CACHEMODE-open-project-update-cache)
+;;vvv (defconst projectIDE-CACHEMODE-background-update-cache)
+;;vvv (defconst projectIDE-CACHEMODE-update-cache-pre-prompt)
+;;vvv (defconst projectIDE-CACHEMODE-update-cache-important-command)
+;;vvv (defconst projectIDE-CACHEMODE-generate-association)
+;;vvv (defcustom projectIDE-default-cachemode)
+
+
+(defconst projectIDE-config-key
   '("^signature="
     "^name="
     "^exclude="
@@ -82,6 +316,10 @@
     "^module=")
   "Default projectIDE config file keyword.
 Must not change.")
+
+(defvar projectIDE-config-key-string
+  (projectIDE-concat-regexp projectIDE-config-key)
+  "Combine the projectIDE-default-exclude.")
 
 (defconst projectIDE-CACHEMODE-open-project-update-cache 1
   "[00000001] Do a full update cache after first opening a project.")
@@ -92,23 +330,55 @@ if project is opened.")
   "[00000100] Fully update cache before any promt.")
 (defconst projectIDE-CACHEMODE-update-cache-important-command 8
   "[00001000] Fully update cache before important command like compile.")
+(defconst projectIDE-CACHEMODE-generate-association 16
+  "[00010000] Generate file association in background.
+Should be turned off for large project.")
 
 (defcustom projectIDE-default-cachemode
   (logior projectIDE-CACHEMODE-open-project-update-cache
           projectIDE-CACHEMODE-background-update-cache
-          projectIDE-CACHEMODE-update-cache-important-command)
+          projectIDE-CACHEMODE-update-cache-important-command
+          projectIDE-CACHEMODE-generate-association)
+
   "Default cache mode for projects.
 `projectIDE-CACHEMODE-open-project-update-cache' = 1
 `projectIDE-CACHEMODE-background-update-cache' = 2
 `projectIDE-CACHEMODE-update-cache-pre-prompt' = 4
 `projectIDE-CACHEMODE-update-cache-important-command' = 8
-A sum of these cache modes you want to enable.
-"
+`projectIDE-CACHEMODE-generate-association' = 16
+A sum of these cache modes you want to enable."
+  
   :tag "Default cache mode"
   :type 'integer
   :group 'projectIDE-config-file)
 
-;; Project Creation Variable
+;; Project config file variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Project creation variable
+;;vvv (defcustom projectIDE-create-defaultDir)
+;;vvv (defcustom projectIDE-global-project-create-hook)
+;;vvv (defcustom projectIDE-create-require-confirm)
+
 (defcustom projectIDE-create-defaultDir (getenv "HOME")
   "Global default project directory.
 When creating project, if no specific directory or
@@ -134,7 +404,30 @@ Other values ask for the confirmation."
   :type 'boolean
   :group 'projectIDE-project-creation)
 
-;; Project Opening Variable
+;; Project creation variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Project opening variable
 (defcustom projectIDE-name-path-seperator "\t\t\t\@PATH="
   "The seperator of name and path when opening project.
 There must be an unique identifier like '@'
@@ -149,7 +442,29 @@ as it will be use to trim the path."
   :type 'bool
   :group 'projectIDE-project-opening)
 
-;; File Opening Variable
+;; Project opening variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; File opening variable
 (defcustom projectIDE-use-project-prefix t
   "When showing files, show project name as prefix instead of full path."
   :tag "Use project prefix instead of full path?"
@@ -162,6 +477,28 @@ as it will be use to trim the path."
   :type 'bool
   :group 'projectIDE-file-opening)
 
+;; File opening variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Debug and logging variable
 (defcustom projectIDE-log-level 2
   "Logging level specifies what to be logged."
@@ -173,7 +510,28 @@ as it will be use to trim the path."
           (const :tag "Disable" nil))
   :group 'projectIDE-global)
 
+;; Debug and logging variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Runtime Variable
 (defvar projectIDE-p nil
   "Indicate whether projectIDE is running.
@@ -189,56 +547,32 @@ Debug mode only add extra output to log file.")
 (defvar projectIDE-runtime-record nil
   ;; hash table
   ;; key: signature
-  ;; value: project-record object
+  ;; value: projectIDE-record object
   "Database recording all project.
-Never attempt to modify it directly.")
-
-(defvar projectIDE-opened-project nil
-  ;; hash table
-  ;; key: signature
-  ;; value: project object
-  "Current opened project.
 Never attempt to modify it directly.")
 
 (defvar projectIDE-runtime-cache nil
   ;; hash table-backward-cell
   ;; key: signature
-  ;; value: project cache object
+  ;; value: projectIDE-cache object
   "Individual project cache.
 Never attempt to modify it directly.")
 
-(defvar projectIDE-buffer-trace
+(defvar projectIDE-runtime-Btrace
   ;; hash table
   ;; key: buffer
-  ;; value: signature
+  ;; value: projectIDE-Btrace object
   "Trace buffer which is a projectIDE project.
 Never attempt to modify it directly.")
 
 (defvar projectIDE-save-cache nil
   "To temporary store the file name to be saved at before-save hook.
-And cache this file at at after-save-hook.")
+And cache this file at at `after-save-hook'.")
 
-(defun projectIDE-concat-regexp (list)
-  "Return a single regexp string from a LIST of separated regexp.
+;; Runtime variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Return
-Type:\t\t string
-Descrip.:\t A single string of combined regexp.
-\t\t\t If LIST is empty, return nil.
 
-LIST
-Type:\t\t string list
-Descrip.:\t A string list of regexp."
-  
-  (let (regexp)
-    (dolist (val list regexp)
-      (if regexp
-          (setq regexp (concat val "\\|" regexp))
-        (setq regexp val)))))
-
-(defvar projectIDE-default-config-key-regexp-string
-  (projectIDE-concat-regexp projectIDE-default-config-key)
-  "Combine the projectIDE-default-exclude.")
 
 (defcustom projectIDE-default-exclude
   `(,(concat (file-name-as-directory "*.idea") "*")
@@ -266,7 +600,21 @@ Descrip.:\t A string list of regexp."
   :type 'integer
   :group 'projectIDE-config-file)
 
-;; Object
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -485,6 +833,25 @@ Descrip.:\t A project based unique ID."
 ;; record object ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; cache and project object
 (cl-defstruct projectIDE-project
@@ -504,6 +871,7 @@ Descrip.:\t A project based unique ID."
   config-update-time                           ;;
   exclude
   whitelist
+  file-cache-state
   file-cache
   opened-buffer                                ;; string in terms of file path
   reserve-field-1
@@ -512,17 +880,26 @@ Descrip.:\t A project based unique ID."
   )
 
 ;;; Getter and setter function
-;; project object doesn't provide setter function
+;; Project object doesn't provide setter function
 ;; because it can only create by projectIDE-parse-config
+;; The setter function of cache can only set cache in projectIDE-runtime-cache
 ;;fff (defun projectIDE-get-cache (signature))
 ;;fff (defun projectIDE-get-config-update-time (signature))
 ;;fff (defun projectIDE-get-project-exclude (signature))
 ;;fff (defun projectIDE-get-project-whitelist (signature))
 ;;fff (defun projectIDE-get-cache-exclude (signature))
 ;;fff (defun projectIDE-get-cache-whitelist (signature))
-;;fff (defun projectIDE-get-cache-mode (signature))
+;;fff (defun projectIDE-get-cachemode (signature))
+;;fff (defun projectIDE-get-file-cache-state (signature))
 ;;fff (defun projectIDE-get-file-cache (signature))
 ;;fff (defun projectIDE-get-opened-buffer (signature))
+;;fff (defun projectIDE-set-cache-project (signature project))
+;;fff (defun projectIDE-set-cache-filter (signature))
+;;fff (defun projectIDE-set-file-cache-state (signature))
+;;fff (defun projectIDE-unset-file-cache-state (signature))
+;;fff (defun projectIDE-set-file-cache (signature))
+;;fff (defun projectIDE-add-opened-buffer (signature file))
+;;fff (defun projectIDE-add-opened-buffer (signature file))
 
 (defun projectIDE-get-cache (signature)
   "Get a projectIDE-cache object of give SIGNATURE in projectIDE-runtime-cache.
@@ -607,8 +984,30 @@ Descrip.:\t A project based unique ID."
   
   (projectIDE-cache-whitelist (gethash signature projectIDE-runtime-cache)))
 
-(defun projectIDE-get-cache-mode (signature)
-  )
+(defun projectIDE-get-cachemode (signature)
+  "Get the cache mode of project given by SIGNATURE.
+
+Return
+Type:\t\t integer (bitwise)
+Descrip.:\t Bitwise operated cache mode. See `projectIDE-default-cachemode'.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+
+  (projectIDE-project-cachemode (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))
+
+(defun projectIDE-get-file-cache-state (signature)
+  "Get the file cache state of project given by SIGNATURE.
+
+Return
+Type:\t\t bool
+Descrip.:\t t if file cache completed at lest once, otherwise nil.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+  (projectIDE-cache-file-cache-state (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))
 
 (defun projectIDE-get-file-cache (signature)
   "Get the file cache hash table from cache with given SIGNATURE.
@@ -635,35 +1034,8 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
 
   (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)))
-;; cache and project object ends
-;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-
-
-
-
-
-
-
-
-
-(defun projectIDE-get-signature-from-buffer-trace (&optional buffer)
-"Return the signature of project of given BUFFER.
-If BUFFER is not provided, current buffer is used.
-
-Return
-Type:\t\t string
-Descrip.:\t Signature of project from buffer trace
-
-BUFFER
-Type:\t\t Emacs buffer
-Descrip.:\t If buffer is not provided, current buffer is used."
-  (gethash (or buffer (current-buffer)) projectIDE-buffer-trace))
-
-
-;;; Setter function
-
-(defun projectIDE-set-project-in-cache (project signature)
+(defun projectIDE-set-cache-project (signature project)
 "Set the PROJECT object in projectIDE-runtime-cache with given SIGNATURE.
 Update the config update time as well.
 
@@ -676,78 +1048,181 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
 
 (let ((cache (gethash signature projectIDE-runtime-cache)))
-    (setf (projectIDE-cache-project cache) project)
-    (setf (projectIDE-cache-config-update-time cache) (current-time))))
+        (setf (projectIDE-cache-project cache) project)
+        (setf (projectIDE-cache-config-update-time cache) (current-time))))
+
+(defun projectIDE-set-cache-filter (signature)
+  "Set the exclude and whitelist of project cache given by SIGNATURE.
+The exculde and whitelist obtain from the project object in cache.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+  
+  (let* ((cache (gethash signature projectIDE-runtime-cache))
+         (exclude (projectIDE-project-exclude (projectIDE-cache-project cache)))
+         (whitelist (projectIDE-project-whitelist (projectIDE-cache-project cache))))
+    (setf (projectIDE-cache-exclude cache) exclude)
+    (setf (projectIDE-cache-exclude whitelist) whitelist)))
+
+(defun projectIDE-set-file-cache-state (signature)
+  "Set the the file cache state of project of given SIGNATURE to t.
+When the file cache state is set to t, it denotes the file cache
+had been updated for at least once.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+  
+  (setf (projectIDE-cache-file-cache-state (gethash signature projectIDE-runtime-cache)) t))
+
+(defun projectIDE-unset-file-cache-state (signature)
+  "Set the the file cache state of project of given SIGNATURE to nil.
+When the file cache state is set to t, it denotes the file cache
+had been updated for at least once, vice versa.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+
+  (setf (projectIDE-cache-file-cache-state (gethash signature projectIDE-runtime-cache)) nil))
+
+(defun projectIDE-set-file-cache (signature)
+  "Set a new file cache hash table for project given by SIGNATURE.
+It can also use to reset the file cache.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+
+  (let ((cache (gethash signature projectIDE-runtime-cache)))
+    (setf (projectIDE-cache-file-cache cache)
+          (fdex-new (projectIDE-record-path (gethash signature projectIDE-runtime-record))
+                    (projectIDE-cache-exclude cache)
+                    (projectIDE-cache-whitelist cache)))))
+
+(defun projectIDE-add-opened-buffer (signature file)
+  "Add FILE to opened buffer of project cache given by SIGNATURE.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID.
+
+FILE
+Type:\t\t string
+Descrip.:\t File path."
+
+  (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))
+        (projectIDE-add-to-list (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) file)))
+
+;; cache and project object ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-(defun trim-string (string)
-  "Return trimmed leading and tailing whitespace from STRING.
-If the return string is a null string, return nil instead.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; projectIDE buffer tracer
+(cl-defstruct projectIDE-Btrace
+  signature
+  association)
+
+;;; Getter and setter function
+;;fff (defun projectIDE-get-Btrace-signature ())
+;;fff (defun projectIDE-get-Btrace-association (&optional buffer))
+;;fff (defun projectIDE-set-Btrace-association (&optional buffer))
+
+(defun projectIDE-get-Btrace-signature (&optional buffer)
+  "Return the project signature of given BUFFER.
+If BUFFER is not a member of a project, returns nil.
+If BUFFER is not provided, current buffer is used.
 
 Return
 Type:\t\t string or nil
-Descrip.:\t Trimmed string or nil if blank string.
+Descrip.:\t Project signature
+\t\t\t Returns nil if BUFFER is not a project member.
 
-STRING
-Type:\t\t string
-Descrip.:\t String to be trimmed."
-  (let ((return-string
-         (replace-regexp-in-string (rx (or (: bos (* (any " \t\n")))
-                                           (: (* (any " \t\n")) eos)))
-                                   ""
-                                   string)))
-    ;; Return value
-    (if (string= return-string "")
-        nil
-      return-string)))
+BUFFER
+Type:\t\t Emacs buffer
+Descrip.:\t If buffer is not provided, current buffer is used."
 
-(defun projectIDE-add-to-list (list element)
-  "Implements `add-to-list'(LIST ELEMENT) with `cl-pushnew'.
-Adds ELEMENT to  LIST if it isn't there yet.
-It handles all situation when LIST or ELEMENT is nil.
-This function does not modify the original list.
-Instead, it returns a new list.
-In addition, it accepts non-symbol LIST.
+  (let ((buffer-trace (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace)))
+    (if buffer-trace
+        (projectIDE-Btrace-signature buffer-trace)
+      nil)))
 
-This function is expensive in term of efficency.
-Avoid to use in heavy loop.
+(defun projectIDE-get-Btrace-association (&optional buffer)
+  "Return the association file list of given BUFFER .
+If BUFFER is not a member of a project, returns nil.
+If BUFFER is not provided, current buffer is used.
 
 Return
-Type:\t\t list
-Descrip.:\t New list with ELEMENT add to LIST
+Type:\t\t list of string
+Descrip.:\t File path of associated files within same project.
+\t\t\t Returns nil if BUFFER is not a project member.
 
-LIST
-Type:\t\t list of any type
-Descrip.:\t List to be checked and appended to.
+BUFFER
+Type:\t\t Emacs buffer
+Descrip.:\t If buffer is not provided, current buffer is used."
 
-ELEMENT
-Type:\t\t same type of LIST element
-Descrip.:\t Add to LIST if ELEMENT isn't there yet."
-  (let ((newlist (copy-tree list)))
-    (if newlist
-        (when element
-          (setq newlist (cl-pushnew element newlist :test 'equal)))
-      (when element
-        (setq newlist (list element))))
-    newlist))
+  (let ((buffer-trace (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace)))
+    (if buffer-trace
+        (projectIDE-Btrace-association buffer-trace)
+      nil)))
 
-(defun projectIDE-append (list1 list2)
-  "Return a combined list of LIST1 and LIST2 and prevent duplication.
-It accepts non-symbol LIST.
+(defun projectIDE-set-Btrace-association (association &optional buffer)
+  "Set the ASSOCIATION list of given buffer.
+If BUFFER is not a member of a project, do nothing.
+If BUFFER is not provided, current buffer is used.
 
-This function is expensive in term of efficency.
-Avoid to use in heavy loop.
+ASSOCIATION
+Type:\t\t list of string
+Descrip.:\t\t A list of file path which have similar filename.
 
-Return
-Type:\t\t list
-Descrip.:\t Combined list of LIST1 and LIST2.
+BUFFER
+Type:\t\t Emacs buffer
+Descrip.:\t If buffer is not provided, current buffer is used."
 
-LIST1/LIST2
-Type:\t list of any type
-Descrip.:\t List to be combined."
-  (let (newlist)
-    (setq newlist (append list1 list2))
-    (cl-remove-duplicates newlist :test 'equal)))
+  (let ((buffer-trace (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace)))
+    (when buffer-trace
+      (setf (projectIDE-Btrace-association buffer-trace) association))))
+
+;; projectIDE buffer trace ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 (provide 'projectIDE-header)
-
+;;; projectIDE-header.el ends here
