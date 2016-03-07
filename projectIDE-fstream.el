@@ -47,7 +47,8 @@ It is uesed for debugging purpose.
 
 This function is safe.
 It checks the accessibilty of file.
-It will attempt to create the parent directories and the file if they do not exist.
+It will attempt to create the parent directories and the file
+if they do not exist.
 Return NIL if file is not accessable after all.
 
 It checks the data for a valid symbol.
