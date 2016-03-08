@@ -34,6 +34,7 @@
 
 ;;; code:
 (require 'cl-lib)
+(require 'fdex)
 (require 'projectIDE-header)
 (require 'projectIDE-debug)
 (require 'projectIDE-fstream)
@@ -618,6 +619,8 @@ Press C-g to cancel the operation."))
 ;;fff (defun projectIDE-untrack-buffer (&optional buffer caller))
 ;;fff (defun projectIDE-before-save-new-file ())
 ;;fff (defun projectIDE-after-save-new-file ())
+;;fff (defun projectIDE-before-emacs-kill ())
+
 
 (defun projectIDE-config-need-update? (signature &optional caller)
   "Return t if config file of given SIGNATURE need to be updated.
@@ -932,6 +935,40 @@ It flags the newly created file to cache at priority."
       (fdex-add-priority-update-path (projectIDE-get-file-cache (car projectIDE-save-cache))
                                      (file-name-directory (buffer-file-name))))
     (setq projectIDE-save-cache nil)))
+
+(defun projectIDE-before-emacs-kill ()
+  "Write all cache in projectIDE-runtime-cache to harddisk.
+This function is designed to add to `kill-emacs-hook'."
+
+  (remove-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
+  
+  (let ((signatures (projectIDE-get-all-caching-signature)))
+    (dolist (signature signatures)
+      (let ((cache (projectIDE-get-cache signatue)))
+        (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (list 'projectIDE-before-emacs-kill 'kill-emacs-hook)))
+      (projectIDE-pop-cache signature))))
+
+(defun projectIDE-generate-association-list (buffer)
+  "Return a list of files which have same filename as BUFFER.
+
+Return
+Type\t\t: list of string
+Descrip.:\t A list of file paths having same filename as BUFFER.
+
+BUFFER
+Type\t\t: buffer
+Descrip.:\t The buffer being identified."
+  
+  (let* ((signature (projectIDE-get-Btrace-signature buffer))
+         (filename (buffer-file-name buffer))
+         regexp)
+
+    (setq regexp (concat (file-name-as-directory ".*\\")
+                         (file-name-sans-extension (file-name-nondirectory filename))
+                         (file-name-as-directory "[^\\")
+                         "]*\\.+.*$"))
+    
+    (projectIDE-get-file-list signature t (lambda (test) (string-match regexp test)))))
 
 ;; Caching function ends ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1432,6 +1469,7 @@ When PREFIX is provided, the file list contains files from all opened projects."
                                      'projectIDE-initialize)
           (add-hook 'find-file-hook 'projectIDE-identify-project)
           (add-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
+          (add-hook 'kill-emacs-hook 'projectIDE-before-emacs-kill)
           (add-hook 'before-save-hook 'projectIDE-before-save-new-file)
           (add-hook 'after-save-hook 'projectIDE-after-save-new-file)
           (setq projectIDE-p t)
@@ -1452,6 +1490,7 @@ When PREFIX is provided, the file list contains files from all opened projects."
   (when projectIDE-p
     (remove-hook 'find-file-hook 'projectIDE-identify-project)
     (remove-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
+    (remove-hook 'kill-emacs-hook 'projectIDE-before-emacs-kill)
     (remove-hook 'before-save-hook 'projectIDE-before-save-new-file)
     (remove-hook 'after-save-hook 'projectIDE-after-save-new-file)
     (setq projectIDE-runtime-record nil
