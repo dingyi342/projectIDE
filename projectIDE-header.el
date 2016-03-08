@@ -352,6 +352,7 @@ Should be turned off for large project.")
 (defcustom projectIDE-default-cachemode
   (logior projectIDE-CACHEMODE-open-project-update-cache
           projectIDE-CACHEMODE-background-update-cache
+          projectIDE-CACHEMODE-update-cache-pre-prompt
           projectIDE-CACHEMODE-update-cache-important-command
           projectIDE-CACHEMODE-generate-association)
 
@@ -443,12 +444,13 @@ Other values ask for the confirmation."
 
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Project opening variable
-(defcustom projectIDE-name-path-seperator "\t\t\t\@PATH="
-  "The seperator of name and path when opening project.
-There must be an unique identifier like '@'
-as it will be use to trim the path."
-  :tag "Name-path seperator."
-  :type 'string
+(defcustom projectIDE-open-project-prompt-type 'name
+  "Define how projects are prompt when calling `projectIDE-open-project'.
+It can be either name or path."
+  :tag "Open project promt type"
+  :type '(radio
+          (const :tag "name" name)
+          (const :tag "path" path))
   :group 'projectIDE-project-opening)
 
 (defcustom projectIDE-open-last-opened-files t
@@ -892,6 +894,11 @@ Descrip.:\t A project based unique ID."
 ;;fff (defun projectIDE-get-cache-exclude (signature))
 ;;fff (defun projectIDE-get-cache-whitelist (signature))
 ;;fff (defun projectIDE-get-cachemode (signature))
+;;fff (defun projectIDE-background-update-cache? (signature))
+;;fff (defun projectIDE-open-project-update-cache? (signature))
+;;fff (defun projectIDE-important-cmd-update-cache? (signature))
+;;fff (defun projectIDE-pre-prompt-update-cache? (signature))
+;;fff (defun projectIDE-generate-association? (signature))
 ;;fff (defun projectIDE-get-file-cache-state (signature))
 ;;fff (defun projectIDE-get-file-cache (signature))
 ;;fff (defun projectIDE-get-opened-buffer (signature))
@@ -904,6 +911,7 @@ Descrip.:\t A project based unique ID."
 ;;fff (defun projectIDE-set-file-cache (signature))
 ;;fff (defun projectIDE-add-opened-buffer (signature file))
 ;;fff (defun projectIDE-remove-opened-buffer (signature file))
+;;fff (defun projectIDE-clear-opened-buffer (signature file))
 
 (defun projectIDE-get-all-caching-signature ()
   "Get a list of project signature which is currently in runtime-cache.
@@ -1021,7 +1029,8 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (projectIDE-cache-file-cache-state (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))
+  (projectIDE-project-cachemode
+   (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))
 
 (defun projectIDE-background-update-cache? (signature)
   "Return t if project of given SIGNATURE should update cache in background.
@@ -1037,7 +1046,8 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-background-update-cache
       (logand
        projectIDE-CACHEMODE-background-update-cache
-       (projectIDE-cache-file-cache-state (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (projectIDE-project-cachemode
+        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
 (defun projectIDE-open-project-update-cache? (signature)
   "Return t if project of given SIGNATURE
@@ -1054,7 +1064,8 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-open-project-update-cache
       (logand
        projectIDE-CACHEMODE-open-project-update-cache
-       (projectIDE-cache-file-cache-state (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (projectIDE-project-cachemode
+        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
 (defun projectIDE-important-cmd-update-cache? (signature)
   "Return t if project of given SIGNATURE
@@ -1072,7 +1083,8 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-update-cache-important-command
       (logand
        projectIDE-CACHEMODE-update-cache-important-command
-       (projectIDE-cache-file-cache-state (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (projectIDE-project-cachemode
+        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
 (defun projectIDE-pre-prompt-update-cache? (signature)
   "Return t if project of given SIGNATURE
@@ -1090,7 +1102,8 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-update-cache-pre-prompt
       (logand
        projectIDE-CACHEMODE-update-cache-pre-prompt
-       (projectIDE-cache-file-cache-state (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (projectIDE-project-cachemode
+        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
 (defun projectIDE-generate-association? (signature)
   "Return t if project of given SIGNATURE should generate file association list.
@@ -1106,7 +1119,8 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-generate-association
       (logand
        projectIDE-CACHEMODE-generate-association
-       (projectIDE-cache-file-cache-state (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (projectIDE-project-cachemode
+       (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
 (defun projectIDE-get-file-cache (signature)
   "Get the file cache hash table from cache with given SIGNATURE.
@@ -1233,13 +1247,11 @@ FILE
 Type:\t\t string
 Descrip.:\t File path."
     
-  (setf (projectIDE-cache-opened-buffer (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)))
+  (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))
         (projectIDE-add-to-list (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) file)))
 
-
-
 (defun projectIDE-remove-opened-buffer (signature file)
-  "Remove FILE to opened buffer of project cache given by SIGNATURE.
+  "Remove FILE from opened buffer of project cache given by SIGNATURE.
 
 SIGNATURE
 Type:\t\t string
@@ -1250,6 +1262,15 @@ Type:\t\t string
 Descrip.:\t File path."
   (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))
         (cl-remove file (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) :test 'equal)))
+
+(defun projectIDE-clear-opened-buffer (signature)
+  "Remove all files from opened buffer of project cache given by SIGNATURE.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+  
+  (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) nil))
 
 ;; cache and project object ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
