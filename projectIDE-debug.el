@@ -36,7 +36,7 @@
 ;;; Code:
 (require 'projectIDE-header)
 
-(defun projectIDE-message-handle (type message &optional print function functions)
+(defun projectIDE-message-handle (type message &optional print functions)
   "This funtion handle messages from projectIDE for debug purpose.
 TYPE specifies message type.  It can be 'Info, 'Warning or 'Error.
 Warning and Error message will be logged by default for debug purpose.
@@ -67,11 +67,11 @@ Descrip.: Function producing the message.  Just for debug purpose.
 FUNCTIONS
 TYpe:\t\t symbol list
 Descrip.: Functions calling FUNCTION to produce the message.  Just for debug purpose."
-
-  (let ((message-prefix nil)
-        (Day (format-time-string "%Y%m%d"))
+  
+  (let ((Day (format-time-string "%Y%m%d"))
         (Time (format-time-string "%R"))
-        (logtype nil))
+        message-prefix
+        logtype)
     
     (cond ((eq type 'Error)
            (setq message-prefix "[projectIDE::Error]")
@@ -79,7 +79,7 @@ Descrip.: Functions calling FUNCTION to produce the message.  Just for debug pur
           ((eq type 'Warning)
            (setq message-prefix "[projectIDE::Warning]")
            (setq logtype 2))
-          ((eq type 'Info)
+          (t
            (setq message-prefix "[projectIDE::Info]")
            (setq logtype 1)))
 
@@ -91,20 +91,34 @@ Descrip.: Functions calling FUNCTION to produce the message.  Just for debug pur
     (when (and (file-exists-p PROJECTIDE-LOG-PATH)
                (or projectIDE-debug-mode (and logtype (>= logtype projectIDE-log-level))))
       (let ((message (replace-regexp-in-string "\n" "\n\t\t\t\t\t" message))
-            (functions-string ""))
-        (while (and (car-safe functions) (symbolp (car functions)))
-          (setq functions-string (concat (symbol-name (car functions)) ">\n\t\t\t\t\t" functions-string)
-                functions (cdr functions)))
+            functions-string)
+        (dolist (function functions)
+          (when (symbolp function)
+            (setq functions-string (concat (symbol-name function) ">\n\t\t\t\t\t" functions-string))))
+        
         (write-region
          (concat Day "-" Time "\t"
                  message-prefix "\t"
                  functions-string
-                 (when (symbolp function)
-                   (concat (symbol-name function) ": "))
                  message "\n")
          nil (concat PROJECTIDE-LOG-PATH Day ".log") t 'inhibit)))
     
     projectIDE-last-message))
+
+(defmacro projectIDE-caller (current &optional caller)
+  "Macro producing a list of function call chain.
+
+CURRENT
+Type:\t\t symbol
+Descrip.:\t Current function name.
+
+CALLER
+Type:\t\t list of symbol
+Descrip.:\t The list of function calling this function."
+  
+  `(nconc
+    (list ,current)
+    (and projectIDE-debug-mode ,caller)))
 
 (defun projectIDE-print-variable (var)
   "Insert VAR at bottom of current buffer.

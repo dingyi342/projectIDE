@@ -178,7 +178,7 @@ Descip.:\t A string list which each entry is to be prefixed."
                                                    "\\'"))))
     (projectIDE-concat-regexp return)))
 
-;; record object ends
+;; General function ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -227,12 +227,17 @@ Descip.:\t A string list which each entry is to be prefixed."
   :tag "Project opening"
   :group 'projectIDE)
 
+(defgroup projectIDE-caching nil
+  "Setting for project caching"
+  :tag "Project caching"
+  :group 'projectIDE)
+
 (defgroup projectIDE-hook nil
   "All available projectIDE hooks."
   :tag "Hook"
   :group 'projectIDE)
 
-;;; General function ends
+;;; projectIDE group ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -321,6 +326,10 @@ Descip.:\t A string list which each entry is to be prefixed."
           (const :tag "Default" default))
   :group 'projectIDE-global)
 
+(defcustom projectIDE-enable-background-service t
+  "Enable projectIDE background services like updating cache."
+  :type 'bool
+  :group 'projectIDE-global)
 ;; Environmental Variable ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -351,15 +360,20 @@ Descip.:\t A string list which each entry is to be prefixed."
 ;;vvv (defconst projectIDE-CACHEMODE-update-cache-important-command)
 ;;vvv (defconst projectIDE-CACHEMODE-generate-association)
 ;;vvv (defcustom projectIDE-default-cachemode)
+;;vvv (defcustom projectIDE-default-exclude)
+;;vvv (defcustom projectIDE-default-whitelist)
+;;vvv (defcustom projectIDE-config-file-search-up-level)
 
 
 (defconst projectIDE-config-key
-  '("^signature="
-    "^name="
-    "^exclude="
-    "^whitelist="
-    "^cachemode="
-    "^module=")
+  '("^signature *="
+    "^name *="
+    "^exclude *="
+    "^whitelist *="
+    "^cachemode *="
+    "^module *="
+    "^scope *="
+    "^[[:digit:][:alpha:]]+.*=")
   "Default projectIDE config file keyword.
 Must not change.")
 
@@ -396,6 +410,32 @@ Should be turned off for large project.")
 A sum of these cache modes you want to enable."
   
   :tag "Default cache mode"
+  :type 'integer
+  :group 'projectIDE-config-file)
+
+(defcustom projectIDE-default-exclude
+  `(,(concat (file-name-as-directory "*.idea") "*")
+    ,(concat (file-name-as-directory "*.eunit") "*")
+    ,(concat (file-name-as-directory "*.git") "*")
+    ,(concat (file-name-as-directory "*.hg") "*")
+    ,(concat (file-name-as-directory "*.fslckout") "*")
+    ,(concat (file-name-as-directory "*.bzr") "*")
+    ,(concat (file-name-as-directory "*_darcs") "*")
+    ,(concat (file-name-as-directory "*.tox") "*")
+    ,(concat (file-name-as-directory "*.svn") "*")
+    ,(concat (file-name-as-directory "*.stack-work") "*"))
+  "A list of exclude items by projectIDE."
+  :group 'projectIDE-config-file
+  :type '(repeat string))
+
+(defcustom projectIDE-default-whitelist nil
+    "A list of exclude items by projectIDE."
+  :group 'projecIDE-config-file
+  :type '(repeat string))
+
+(defcustom projectIDE-config-file-search-up-level 4
+  "Number of upper level directories to search for the .projectIDE file."
+  :tag "Config file search up level"
   :type 'integer
   :group 'projectIDE-config-file)
 
@@ -448,7 +488,7 @@ If this value is nil, projectIDE will skip confirmation
 before creating project.
 Other values ask for the confirmation."
   :tag "Require confirmation when creating project?"
-  :type 'boolean
+  :type 'bool
   :group 'projectIDE-project-creation)
 
 ;; Project creation variable ends
@@ -520,6 +560,36 @@ It can be either name or path."
 
 ;; Project or file opening variable ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Project caching variable
+
+(defcustom projectIDE-update-cache-interval 5
+  "The time interval updating project cache by one step."
+  :tag "Background update cache interval"
+  :type 'integer
+  :group 'projectIDE-caching)
+
+;; Project caching variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 
 
@@ -614,37 +684,17 @@ And cache this file at at `after-save-hook'.")
   "To determine whether projectIDE write cache to harddisk
 after closing the last file.")
 
-(defvar projectIDE-timer nil)
+(defvar projectIDE-timer-primary nil
+  "Timer for `projectIDE-timer-function-primary' to repeat itself, or nil.")
+
+(defvar projectIDE-timer-idle nil
+  "Timer for `projectIDE-timer-function-idle' to reschedule itself, or nil.")
+
 ;; Runtime variable ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 
-(defcustom projectIDE-default-exclude
-  `(,(concat (file-name-as-directory "*.idea") "*")
-    ,(concat (file-name-as-directory "*.eunit") "*")
-    ,(concat (file-name-as-directory "*.git") "*")
-    ,(concat (file-name-as-directory "*.hg") "*")
-    ,(concat (file-name-as-directory "*.fslckout") "*")
-    ,(concat (file-name-as-directory "*.bzr") "*")
-    ,(concat (file-name-as-directory "*_darcs") "*")
-    ,(concat (file-name-as-directory "*.tox") "*")
-    ,(concat (file-name-as-directory "*.svn") "*")
-    ,(concat (file-name-as-directory "*.stack-work") "*"))
-  "A list of exclude items by projectIDE."
-  :group 'projectIDE-config-file
-  :type '(repeat string))
-
-(defcustom projectIDE-default-whitelist nil
-    "A list of exclude items by projectIDE."
-  :group 'projecIDE-config-file
-  :type '(repeat string))
-
-(defcustom projectIDE-config-file-search-up-level 4
-  "Number of upper level directories to search for the .projectIDE file."
-  :tag "Config file search up level"
-  :type 'integer
-  :group 'projectIDE-config-file)
 
 
 
@@ -863,6 +913,7 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
 
   (setf (projectIDE-record-last-open (gethash signature projectIDE-runtime-record)) (current-time)))
+
 ;; record object ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -890,13 +941,13 @@ Descrip.:\t A project based unique ID."
 (cl-defstruct projectIDE-project
   signature                                    ;; string         eg. "173874102"
   name                                         ;; string         eg. "project1"
-  (exclude projectIDE-default-exclude)         ;; string-list    eg. ("*.git" ".projectIDE")
-  (whitelist projectIDE-default-whitelist)     ;; string-list    eg. ("*.git" ".projectIDE")
-  (cachemode projectIDE-default-cachemode)
+  exclude                                      ;; string-list    eg. ("*.git" ".projectIDE")
+  whitelist                                    ;; string-list    eg. ("*.git" ".projectIDE")
+  cachemode
   module
   module-var
+  reserve-field-1
   reserve-field-2
-  reserve-field-3
   )
 
 (cl-defstruct projectIDE-cache
@@ -911,6 +962,10 @@ Descrip.:\t A project based unique ID."
   reserve-field-2
   reserve-field-3
   )
+
+(cl-defstruct projectIDE-assocache
+  state
+  filelist)
 
 ;;; Getter and setter function
 ;; Project object doesn't provide setter function
@@ -932,6 +987,7 @@ Descrip.:\t A project based unique ID."
 ;;fff (defun projectIDE-get-file-cache (signature))
 ;;fff (defun projectIDE-get-opened-buffer (signature))
 ;;fff (defun projectIDE-get-file-association (&optional buffer))
+;;fff (defun projectIDE-get-file-association-state (&optional buffer))
 ;;fff (defun projectIDE-push-cache (signature cache))
 ;;fff (defun projectIDE-pop-cache (signature))
 ;;fff (defun projectIDE-set-cache-project (signature project))
@@ -943,6 +999,7 @@ Descrip.:\t A project based unique ID."
 ;;fff (defun projectIDE-remove-opened-buffer (signature file))
 ;;fff (defun projectIDE-clear-opened-buffer (signature file))
 ;;fff (defun projectIDE-set-file-association (signature filelist &optional buffer))
+;;fff (defun projectIDE-flag-association-expired (signature))
 
 (defun projectIDE-get-all-caching-signature ()
   "Get a list of project signature which is currently in runtime-cache.
@@ -1060,9 +1117,9 @@ Descrip.:\t A project based unique ID."
 Return
 Type:\t\t int
 Descrip.:\t netgative if the file cache has not been updated yet.
-\t\t\t 0 is a state it repeating a completed state.
-\t\t\t 1 is an uncertain state that it may or may not be
-\t\t\t completed updating.
+\t\t\t 0 is an uncertain state that it may or may not be
+\t\t\t   completed updating.
+\t\t\t 1 is a state it repeating a completed state.
 \t\t\t 2 is a state that it generates buffer association.
 
 SIGNATURE
@@ -1205,13 +1262,39 @@ BUFFER
 Type:\t\t Emacs buffer
 Descrip.:\t If buffer is not provided, current buffer is used."
 
-  (let ((signature (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace)))
-    (if signature
-        (let ((table (gethash (concat signature "association") projectIDE-runtime-cache)))
-          (if table
-              (gethash (file-name-sans-extension (file-name-nondirectory (buffer-file-name buffer))) table)
-            nil))
+  (let ((signature (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace))
+        table
+        association)
+    (if (and signature
+             (setq table (gethash (concat signature "association") projectIDE-runtime-cache))
+             (setq association (gethash (file-name-sans-extension (file-name-nondirectory (buffer-file-name buffer))) table)))
+        (projectIDE-assocache-filelist association)
       nil)))
+
+(defun projectIDE-get-file-association-state (&optional buffer)
+  "Return t if the file association state of given BUFFER is valid.
+Otherwise, nil.
+If BUFFER is not provided, current buffer is used.
+
+Return
+Type:\t\t bool
+Descrip.:\t Return t if the file association state of given BUFFER is valid.
+
+BUFFER
+Type:\t\t Emacs buffer
+Descrip.:\t If buffer is not provided, current buffer is used."
+
+  (let ((signature (gethash buffer projectIDE-runtime-Btrace))
+        table
+        association)
+    (if (and signature
+             (setq table (gethash (concat signature "association") projectIDE-runtime-cache))
+             (setq association
+                   (gethash (file-name-sans-extension (file-name-nondirectory (buffer-file-name buffer))) table)))
+        (projectIDE-assocache-state association)
+      nil)))
+
+
 
 (defun projectIDE-push-cache (signature cache)
   "Push CACHE of project given by SIGNATURE in projectIDE-runtime-cache.
@@ -1273,9 +1356,7 @@ Descrip.:\t A project based unique ID."
     (setf (projectIDE-cache-whitelist cache) whitelist)))
 
 (defun projectIDE-set-file-cache-state (signature state)
-  "Set the the file cache state of project of given SIGNATURE to t.
-When the file cache state is set to t, it denotes the file cache
-had been updated for at least once.
+  "Set the the file cache state of project of given SIGNATURE to STATE.
 STATE is the state of file caching, see `projectIDE-get-file-cache-state'.
 
 
@@ -1359,13 +1440,13 @@ Descrip.:\t If buffer is not provided, current buffer is used."
        (table (gethash (concat signature "association") projectIDE-runtime-cache)))
   
   (while (not (equal filename (file-name-sans-extension filename)))
-    (setq filename(file-name-sans-extension filename) ))
+    (setq filename (file-name-sans-extension filename) ))
   
     (when table
-      (puthash filename filelist table))))
+      (puthash filename (make-projectIDE-assocache :state t :filelist filelist) table))))
 
-(defun projectIDE-clear-file-association (signature)
-  "Clear the file association list of project given by SIGNATURE.
+(defun projectIDE-flag-association-expired (signature)
+  "Flag the file association list of project given by SIGNATURE expired.
 
 SIGNATURE
 Type:\t\t string
@@ -1373,7 +1454,10 @@ Descrip.:\t A project based unique ID."
 
   (let ((table (gethash (concat signature "association") projectIDE-runtime-cache)))
     (when table
-      (clrhash table))))
+      (maphash
+       (lambda (key value)
+         (setf (projectIDE-assocache-state value) nil))
+       table))))
 
 ;; cache and project object ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1419,7 +1503,27 @@ Descrip.:\t If buffer is not provided, current buffer is used."
   
   (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace))
 
-(defun projectIDE-get-buffer-with-signatures (signature))
+(defun projectIDE-get-buffer-list (&optional signature)
+  "Return all opened buffer objects from project given by SIGNATURE.
+If signature is not provided, return opened buffers from all project.
+
+Return
+Type:\t\t list of buffer objects
+Descrip.:\t\t Buffer objects of given project.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID.
+\t\t\t If signature is not provided, return opened buffers from all project."
+  
+  (if signature
+      (let ((buffers (hash-table-keys projectIDE-runtime-Btrace))
+            buffers-new)
+        (dolist (buffer buffers)
+          (when (equal (gethash buffer projectIDE-runtime-Btrace) signature)
+            (push buffer buffers-new)))
+        buffers-new)
+    (hash-table-keys projectIDE-runtime-Btrace)))
 
 
 (defun projectIDE-push-Btrace (signature &optional buffer)
