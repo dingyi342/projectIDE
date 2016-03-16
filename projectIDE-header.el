@@ -79,6 +79,8 @@ Descrip.:\t A string list of regexp."
           (setq regexp (concat val "\\|" regexp))
         (setq regexp val)))))
 
+
+
 (defun projectIDE-trim-string (string)
   "Return trimmed leading and tailing whitespace from STRING.
 If the return string is a null string, return nil instead.
@@ -988,6 +990,7 @@ Descrip.:\t A project based unique ID."
 ;;fff (defun projectIDE-get-opened-buffer (signature))
 ;;fff (defun projectIDE-get-file-association (&optional buffer))
 ;;fff (defun projectIDE-get-file-association-state (&optional buffer))
+;;fff (defun projectIDE-get-modules (signature))
 ;;fff (defun projectIDE-push-cache (signature cache))
 ;;fff (defun projectIDE-pop-cache (signature))
 ;;fff (defun projectIDE-set-cache-project (signature project))
@@ -1296,6 +1299,25 @@ Descrip.:\t If buffer is not provided, current buffer is used."
 
 
 
+(defun projectIDE-get-modules (signature)
+
+  "Return a list of modules for project with given SIGNATURE.
+
+Return
+Type:\t\t list of symbol
+Descrip:\t List of modules
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+
+  (let ((cache (gethash signature projectIDE-runtime-cache)))
+    (if cahce
+        (projectIDE-project-module (projectIDE-cache-project cache))
+      nil)))
+
+
+
 (defun projectIDE-push-cache (signature cache)
   "Push CACHE of project given by SIGNATURE in projectIDE-runtime-cache.
 Make an file association cache as well if it is not disabled.
@@ -1552,6 +1574,120 @@ Descrip.:\t If buffer is not provided, current buffer is used."
   (remhash (or buffer (current-buffer)) projectIDE-runtime-Btrace))
 ;; projectIDE buffer trace ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; projectIDE module
+(cl-defstruct projectIDE-package
+  name
+  functions
+  )
+
+(cl-defstruct projectIDE-function
+  name
+  type
+  args
+  docstring
+  body
+  key
+  )
+
+(defvar projectIDE-current-loading-module nil
+  "Store the current loading module.
+It will be non-nil only while loading a module.")
+
+(defvar projectIDE-runtime-packages nil
+  "Store and manage modules.")
+
+(defvar projectIDE-runtime-functions nil
+  "Store and manage project specific functions.")
+
+(defun projectIDE-register (package function)
+  "Register FUNCTION from PACKAGE to `projectIDE-runtime-packages'."
+  (let ((pack (plist-get projectIDE-runtime-packages package)))
+    (if pack
+        (setf (projectIDE-package-functions pack)
+              (projectIDE-add-to-list (projectIDE-package-functions pack) function))
+      (setq projectIDE-runtime-packages (plist-put
+                                         projectIDE-runtime-packages
+                                         package
+                                         (make-projectIDE-package :name package :functions (list function)))))))
+
+(defmacro projectIDE-defun (name args &rest body)
+  (projectIDE-register projectIDE-current-loading-module name)
+  (puthash
+   name
+   (make-projectIDE-function :name name
+                             :type 'defun
+                             :args args
+                             :docstring (and (stringp (car body)) (car body))
+                             :body (or (and (stringp (car body)) (cdr body)) body))
+   projectIDE-runtime-functions))
+
+(defmacro projectIDE-cl-defun (name args &rest body)
+  (projectIDE-register projectIDE-current-loading-module name)
+  (puthash
+   name
+   (make-projectIDE-function :name name
+                             :type 'cl-defun
+                             :args args
+                             :docstring (and (stringp (car body)) (car body))
+                             :body (or (and (stringp (car body)) (cdr body)) body))
+   projectIDE-runtime-functions))
+
+(defmacro projectIDE-defmacro (name args &rest body)
+  (projectIDE-register projectIDE-current-loading-module name)
+  (puthash
+   name
+   (make-projectIDE-function :name name
+                             :type 'defmacro
+                             :args args
+                             :docstring (and (stringp (car body)) (car body))
+                             :body (or (and (stringp (car body)) (cdr body)) body))
+   projectIDE-runtime-functions))
+
+(defmacro projectIDE-cl-defmacro (name args &rest body)
+  (projectIDE-register projectIDE-current-loading-module name)
+  (puthash
+   name
+   (make-projectIDE-function :name name
+                             :type 'cl-defmacro
+                             :args args
+                             :docstring (and (stringp (car body)) (car body))
+                             :body (or (and (stringp (car body)) (cdr body)) body))
+   projectIDE-runtime-functions))
+
+;; projectIDE module endls
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

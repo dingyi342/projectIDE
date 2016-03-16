@@ -38,7 +38,8 @@
 
 ;;; Config file function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;fff (defun projectIDE-parse-config (file &optional errormessage caller))
-;;fff (defun projectIDE-verify-config (prefix)) -I
+;;fff (defun projectIDE-verify-config (&optional prefix)) -I
+
 
 (defun projectIDE-parse-config (config &optional errormessage caller)
   
@@ -113,12 +114,30 @@ Descrip.:\t Function list calling this function for debug purpose."
                         (setf (projectIDE-project-name project) (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
                        
                        ((= counter 2) ;; "^exclude *="
-                        (let ((exclude-list (split-string (buffer-substring-no-properties (point) line-end))))
+                        (let ((exclude-list
+                               (condition-case err
+                                   (split-string-and-unquote (buffer-substring-no-properties (point) line-end))
+                                 (end-of-file
+                                  (projectIDE-message-handle 'Error
+                                                             (format "Config file corrupt. Unbalance quote on line --%s-- of \"%s\"."
+                                                                     (line-number-at-pos) filename)
+                                                             errormessage
+                                                             (projectIDE-caller 'projectIDE-parse-config caller))
+                                  (throw 'parse-error nil)))))
                           (setf (projectIDE-project-exclude project)
                                 (projectIDE-append (projectIDE-project-exclude project) exclude-list))))
                        
                        ((= counter 3) ;; "^whitelist *="
-                        (let ((whitelist (split-string (buffer-substring-no-properties (point) line-end))))
+                        (let ((whitelist
+                               (condition-case err
+                                   (split-string-and-unquote (buffer-substring-no-properties (point) line-end))
+                                 (end-of-file
+                                  (projectIDE-message-handle 'Error
+                                                             (format "Config file corrupt. Unbalance quote on line --%s-- of \"%s\"."
+                                                                     (line-number-at-pos) filename)
+                                                             errormessage
+                                                             (projectIDE-caller 'projectIDE-parse-config caller))
+                                  (throw 'parse-error nil)))))
                           (setf (projectIDE-project-whitelist project)
                                 (projectIDE-append (projectIDE-project-whitelist project) whitelist))))
                        
@@ -144,7 +163,15 @@ Descrip.:\t Function list calling this function for debug purpose."
 
                        ((= counter 7) ;; "^[[:digit:][:alpha:]]+ *="
                         (let ((module-var (projectIDE-project-module-var project))
-                              (var (split-string (buffer-substring-no-properties (point) line-end)))
+                              (var (condition-case err
+                                       (split-string-and-unquote (buffer-substring-no-properties (point) line-end))
+                                     (end-of-file
+                                      (projectIDE-message-handle 'Error
+                                                                 (format "Config file corrupt. Unbalance quote on line --%s-- of \"%s\"."
+                                                                         (line-number-at-pos) filename)
+                                                                 errormessage
+                                                                 (projectIDE-caller 'projectIDE-parse-config caller))
+                                      (throw 'parse-error nil))))
                               (name (concat scope (and scope "-")
                                      (string-remove-suffix "="
                                       (projectIDE-trim-string
@@ -173,7 +200,7 @@ Descrip.:\t Function list calling this function for debug purpose."
 
 
 
-(defun projectIDE-verify-config (prefix)
+(defun projectIDE-verify-config (&optional prefix)
   
   "An interactive function to verify a \".projectIDE\" config.
 
@@ -196,13 +223,13 @@ Descrip:\t Prompt for a config file if it is provided."
   (let (config)
 
     ;; Try to read current buffer first
-    (when (and (= prefix 1)
+    (when (and (or (not prefix) (= prefix 1))
                (buffer-file-name)
                (equal (file-name-nondirectory (buffer-file-name)) PROJECTIDE-PROJECTROOT-IDENTIFIER))
       (setq config (current-buffer)))
     
     ;; Try to prompt for a config file
-    (when (not (= prefix 1))
+    (when (and prefix (not (= prefix 1)))
       (setq config (expand-file-name
                     (read-file-name "Choose config: " nil nil t nil
                                     (lambda (file)
@@ -216,18 +243,37 @@ Descrip:\t Prompt for a config file if it is provided."
       (if (projectIDE-parse-config config)
           (progn
             (projectIDE-message-handle 'Info
-                                       "Project config parse successfully."
+                                       "Project config parse successfully. File saved."
                                        t
                                        (projectIDE-caller 'projectIDE-verify-config))
             t)
         ;; Parsing error
-        (let ((message projectIDE-last-message))
-          (projectIDE-message-handle 'Warning
-                                     (format "There is an error parsing \"%s\".\n%s"
-                                             (or (and (bufferp config) (buffer-file-name config)) config) message)
-                                     t
-                                     (projectIDE-caller 'projectIDE-verify-config))
-          nil)))))
+        (message "%s\nFile saved." projectIDE-last-message)
+        nil))))
+
+
+(defvar projectIDE-config-font-lock-keywords
+  
+  '(("^#+.*$" . font-lock-comment-face)
+    ("\\(^signature\\)\\( *= *\\)\\(.*$\\)"
+     (1 'font-lock-function-name-face)
+     (3 'font-lock-warning-face))
+    ("^name\\|^cachemode" . font-lock-function-name-face)
+    ("^exclude\\|^whitelist\\|^module" . font-lock-builtin-face)
+    ("^scope" . font-lock-type-face)
+    ("=" . font-lock-keyword-face)
+    ("\\(^[[:digit:][:alpha:]]+.*\\)="
+     (1 'font-lock-variable-name-face)))
+  
+   "Keyword highlighting specification for `projectIDE-config-mode-hook'.")
+
+(define-derived-mode projectIDE-config-mode nil "projectIDE-config"
+  "Major mode for editing \".projectIDE\" project config.
+Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
+  
+  (setq-local font-lock-defaults
+              '(projectIDE-config-font-lock-keywords))
+  (add-hook 'after-save-hook 'projectIDE-verify-config nil t))
 
 ;;; Config file function ends ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1710,7 +1756,8 @@ association at other window."
           (unless projectIDE-runtime-record
             (setq projectIDE-runtime-record (make-hash-table :test 'equal :size 40)))
           (setq projectIDE-runtime-cache (make-hash-table :test 'equal :size 20)
-                projectIDE-runtime-Btrace (make-hash-table :test 'eql :size 40))
+                projectIDE-runtime-Btrace (make-hash-table :test 'eq :size 40)
+                projectIDE-runtime-functions (make-hash-table :test 'eq :size 100))
           (projectIDE-message-handle 'Info
                                      "projectIDE starts successfully."
                                      t
@@ -1721,7 +1768,9 @@ association at other window."
           (advice-add 'save-buffers-kill-emacs :before #'projectIDE-before-emacs-kill)
           (add-hook 'before-save-hook 'projectIDE-before-save-new-file)
           (add-hook 'after-save-hook 'projectIDE-after-save-new-file)
-
+          
+          (add-to-list 'auto-mode-alist '("\\.projectIDE\\'" . projectIDE-config-mode))
+          
           (when projectIDE-enable-background-service
             (setq projectIDE-timer-primary (run-with-idle-timer projectIDE-update-cache-interval t 'projectIDE-timer-function))
             (projectIDE-timer-function))
@@ -1758,6 +1807,7 @@ association at other window."
     (setq projectIDE-runtime-record nil
           projectIDE-runtime-cache nil
           projectIDE-runtime-Btrace nil
+          projectIDE-runtime-functions nil
           projectIDE-p nil)
     (run-hooks 'projectIDE-terminate-hook)))
 
