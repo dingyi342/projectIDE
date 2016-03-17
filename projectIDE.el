@@ -76,7 +76,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       
       (with-temp-buffer
         (if (bufferp config)
-            (insert-buffer config)
+            (insert-buffer-substring config)
           (insert-file-contents config))
         (goto-char 1)
         
@@ -102,7 +102,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      errormessage
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
                           (throw 'parse-error nil))
-                        (setf (projectIDE-project-signature project) (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
+                        (setf (projectIDE-project-signature project) (string-trim (buffer-substring-no-properties (point) line-end))))
                        
                        ((= counter 1) ;; "^name *="
                         (when (projectIDE-project-name project)
@@ -111,7 +111,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      errormessage
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
                           (throw 'parse-error nil))
-                        (setf (projectIDE-project-name project) (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
+                        (setf (projectIDE-project-name project) (string-trim (buffer-substring-no-properties (point) line-end))))
                        
                        ((= counter 2) ;; "^exclude *="
                         (let ((exclude-list
@@ -149,7 +149,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-cachemode project)
-                              (string-to-int (projectIDE-trim-string (buffer-substring-no-properties (point) line-end)))))
+                              (string-to-number (string-trim (buffer-substring-no-properties (point) line-end)))))
                        
                        ((= counter 5) ;; "^module *="
                         (let ((modules (projectIDE-project-module project))
@@ -159,7 +159,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                           (setf (projectIDE-project-module project) modules)))
 
                        ((= counter 6) ;; "^scope *="
-                        (setq scope (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
+                        (setq scope (string-trim (buffer-substring-no-properties (point) line-end))))
 
                        ((= counter 7) ;; "^[[:digit:][:alpha:]]+ *="
                         (let ((module-var (projectIDE-project-module-var project))
@@ -174,7 +174,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                       (throw 'parse-error nil))))
                               (name (concat scope (and scope "-")
                                      (string-remove-suffix "="
-                                      (projectIDE-trim-string
+                                      (string-trim
                                        (buffer-substring-no-properties (line-beginning-position) (point)))))))
                           (setq module-var (plist-put module-var name var))
                           (setf (projectIDE-project-module-var project) module-var)))
@@ -250,30 +250,6 @@ Descrip:\t Prompt for a config file if it is provided."
         ;; Parsing error
         (message "%s\nFile saved." projectIDE-last-message)
         nil))))
-
-
-(defvar projectIDE-config-font-lock-keywords
-  
-  '(("^#+.*$" . font-lock-comment-face)
-    ("\\(^signature\\)\\( *= *\\)\\(.*$\\)"
-     (1 'font-lock-function-name-face)
-     (3 'font-lock-warning-face))
-    ("^name\\|^cachemode" . font-lock-function-name-face)
-    ("^exclude\\|^whitelist\\|^module" . font-lock-builtin-face)
-    ("^scope" . font-lock-type-face)
-    ("=" . font-lock-keyword-face)
-    ("\\(^[[:digit:][:alpha:]]+.*\\)="
-     (1 'font-lock-variable-name-face)))
-  
-   "Keyword highlighting specification for `projectIDE-config-mode-hook'.")
-
-(define-derived-mode projectIDE-config-mode nil "projectIDE-config"
-  "Major mode for editing \".projectIDE\" project config.
-Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
-  
-  (setq-local font-lock-defaults
-              '(projectIDE-config-font-lock-keywords))
-  (add-hook 'after-save-hook 'projectIDE-verify-config nil t))
 
 ;;; Config file function ends ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -649,10 +625,10 @@ Descrip.:\t Function list calling this function for debug purpose."
     
     ;; Index project
     (if (and (file-exists-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
-             (signature (projectIDE-project-signature
+             (projectIDE-project-signature
                          (projectIDE-parse-config (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)
                                                   nil
-                                                  (projectIDE-caller 'projectIDE-index-project caller)))))
+                                                  (projectIDE-caller 'projectIDE-index-project caller))))
         (if (yes-or-no-p
              (concat (projectIDE-message-handle 'Warning
                                                 (format ".projectIDE with signature found at \"%s\"" path)
@@ -905,6 +881,10 @@ Descrip.:\t Function list calling this function for debug purpose."
       (when signature
         (unless (projectIDE-background-update-cache? signature)
           (throw 'quit nil))
+
+        (when (projectIDE-config-need-update? signature (projectIDE-caller 'projectIDE-background-update-cache))
+          (projectIDE-update-project-config signature nil (projectIDE-caller 'projectIDE-background-update-cache)))
+
         (setq state (projectIDE-get-file-cache-state signature))
       
         (cond
@@ -957,13 +937,13 @@ In simple term, it updates folders and files of the project."
                                    (projectIDE-caller 'projectIDE-update-cache))
         (throw 'Error nil))
       
-      (projectIDE-update-cache-backend signature (and projectIDE-debug-mode (list 'projectIDE-update-cache))))
+      (projectIDE-update-cache-backend signature (and projectIDE-debug-mode (list 'projectIDE-update-cache)))
       
-    (when projectIDE-debug-mode
-      (projectIDE-message-handle 'Info
-                                 (format "Updated project cache for project \"%s\"" signature)
-                                 nil
-                                 (projectIDE-caller 'projectIDE-update-cache)))
+      (when projectIDE-debug-mode
+        (projectIDE-message-handle 'Info
+                                   (format "Updated project cache for project \"%s\"" signature)
+                                   nil
+                                   (projectIDE-caller 'projectIDE-update-cache))))
     t))
 
 (defun projectIDE-track-buffer (signature &optional buffer caller)
@@ -1113,77 +1093,18 @@ This function is designed to advice before `save-buffers-kill-emacs'."
 
 
 ;;; Fetching data function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;;fff (defun projectIDE-prompt (prompt choices &optional initial-input)
 ;;fff (defun projectIDE-get-project-list ())
 ;;fff (defun projectIDE-open-project (&optional caller)) - I
+;;fff (defun projectIDE-get-folder-list (signature &optional full filter caller))
+;;fff (defun projectIDE-open-folder (prefix &optional otherwindow)) -I
+;;fff (defun projectIDE-open-folder-other-window (prefix)) - I
 ;;fff (defun projectIDE-get-file-list (signature &optional full filter caller))
 ;;fff (defun projectIDE-open-file (prefix)) - I
+;;fff (defun projectIDE-open-file-other-window (prefix)) - I
 ;;fff (defun projectIDE-generate-association-list (&optional buffer))
 ;;fff (defun projectIDE-switch-association (prefix)) -I
-
-(defun projectIDE-prompt (prompt choices &optional initial-input)
-  
-  "Create a PROMPT to choose from CHOICES which is a list.
-Return the selected result.
-
-Return
-Type:\t\t type of the CHOICES list
-Descrip.:\t Return the user choice.
-
-PROMPT
-Type:\t\t string
-Descrip.: Prompt message.
-
-CHOICES
-Type:\t\t list of any type
-Descrip.: A list of choices to let user choose.
-
-INITIAL-INPUT
-Type:\t\t string
-Descrip.:\t Initial input for the prompt."
-  
-  (cond
-     ;; ido
-     ((eq projectIDE-completion-system 'ido)
-      (ido-completing-read prompt choices nil nil initial-input))
-     ;; helm
-     ((eq projectIDE-completion-system 'helm)
-      (if (fboundp 'helm-comp-read)
-          (helm-comp-read prompt choices
-                          :initial-input initial-input
-                          :candidates-in-buffer t
-                          :must-match 'confirm)
-        (projectIDE-message-handle 'Warning
-                                   "Problem implementing helm completion. Please check `projectIDE-completion-system'.
-                                    projectIDE will use default completion instead."
-                                   t
-                                   (projectIDE-caller 'projectIDE-prompt))
-        (completing-read prompt choices nil nil initial-input)))
-     ;; grizzl
-     ((eq projectIDE-completion-system 'grizzl)
-      (if (and (fboundp 'grizzl-completing-read)
-               (fboundp 'grizzl-make-index))
-          (grizzl-completing-read prompt (grizzl-make-index choices))
-        (projectIDE-message-handle 'Warning
-                                   "Problem implementing grizzl completion. Please check `projectIDE-completion-system'.
-                                    projectIDE will use default completion instead."
-                                   t
-                                   (projectIDE-caller 'projectIDE-prompt))
-        (completing-read prompt choices nil nil initial-input)))
-     ;; ivy
-     ((eq projectIDE-completion-system 'ivy)
-      (if (fboundp 'ivy-completing-read)
-          (ivy-completing-read prompt choices nil nil initial-input)
-        (projectIDE-message-handle 'Warning
-                                   "Problem implementing ivy completion. Please check `projectIDE-completion-system'.
-                                    projectIDE will use default completion instead."
-                                   t
-                                   (projectIDE-caller 'projectIDE-prompt))
-        (completing-read prompt choices nil nil initial-input)))
-     ;; default
-     (t (completing-read prompt choices nil nil initial-input))))
-
-
+;;fff (defun projectIDE-switch-association-other-window (prefix)) - I
+;;fff (defun projectIDE-close-project ()) -I
 
 (defun projectIDE-get-project-list ()
   
@@ -1270,10 +1191,10 @@ Descrip.:\t Function list calling this function for debug purpose."
       (cond
        ((eq projectIDE-open-project-prompt-type 'path)
         (setq choice (projectIDE-prompt "Choose project: " paths))
-        (setq signature (nth (position choice paths :test 'equal) signatures)))
+        (setq signature (nth (cl-position choice paths :test 'equal) signatures)))
        (t
         (setq choice (projectIDE-prompt "Choose project: " names))
-        (setq signature (nth (position choice names :test 'equal) signatures))))
+        (setq signature (nth (cl-position choice names :test 'equal) signatures))))
       
       (setq projectRoot (projectIDE-get-project-path signature))
       
@@ -1324,6 +1245,135 @@ Descrip.:\t Function list calling this function for debug purpose."
         (dired projectRoot)))))
 
 
+
+(defun projectIDE-get-folder-list (signature &optional full filter caller)
+  
+  "Get a folder list of project given by SIGNATURE.
+If FULL is non-nil, the file list contains full paths,
+otherwise contains paths relative to project root.
+
+FILTER is a predicate funtion accepting one argument
+to test each of the entry.
+
+CALLER is the function list calling this function.
+It is uesed for debugging purpose.
+
+Return
+Type:\t\t list of string
+Descrip.:\t A list of folder of given project.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID.
+
+FULL
+Typee:\t\t bool
+Descrip.:\t Return path relative to project root if nil.
+\t\t\t Otherwise return full path.
+
+FILTER
+Type:\t\t a predicate funtion
+Descrip.:\t A predicate function taking one string argument.
+\t\t\t The predicate function should return t if the argument is accepted.
+Example:\t (projectIDE-get-folder-list
+\t\t\t    (\"signature\" t (lambda (test) (if (string-match \"*/scr/*\" test) nil t))))
+
+CALLER
+Type:\t\t symbol list
+Descrip.:\t Function list calling this function for debug purpose."
+  
+  (when (projectIDE-pre-prompt-update-cache? signature)
+    (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-get-file-list caller)))
+
+  (if filter
+      (let ((folderlist (fdex-get-folderlist (projectIDE-get-file-cache signature) full))
+            folderlist-1)
+        (dolist (folder folderlist)
+          (when (funcall filter folder)
+            (setq folderlist-1 (nconc folderlist-1 (list folder)))))
+        folderlist-1)
+    (fdex-get-folderlist (projectIDE-get-file-cache signature) full)))
+
+
+
+(defun projectIDE-open-folder (prefix &optional otherwindow)
+  
+  "An interative function to prompt a folder for opening.
+The folder list prompted contains folders from project of current buffer.
+Unless current buffer is not a recorded project,
+it will project for all folders form opened projects instesd.
+When PREFIX is provided, the folder list contains folders from all opened projects.
+When OTHERWINDOW is provided, the folder will be open on other window."
+  
+  (interactive "p")
+  (catch 'Error
+    (unless (projectIDE-initialize-maybe)
+      (projectIDE-message-handle 'Error
+                                 "projectIDE not initialized."
+                                 t
+                                 (projectIDE-caller 'projectIDE-open-folder))
+      (throw 'Error nil))
+    
+    (let (sources
+           prompt
+           project-prefix
+           choice)
+      
+      ;; When prefixed, open folder from all current opened project.
+      (if (not (= prefix 1))
+          (setq sources (projectIDE-get-all-caching-signature))
+        (setq sources (list (projectIDE-get-Btrace-signature (current-buffer))))
+        (unless (car sources)
+          (setq sources (projectIDE-get-all-caching-signature))))
+      
+      (unless (car sources)
+        (projectIDE-message-handle 'Warning
+                                   "Current buffer is not an indexed project."
+                                   t
+                                   (projectIDE-caller 'projectIDE-open-folder))
+        (throw 'Error nil))
+      
+      ;; Determined if project prefix should be used
+      (when (and projectIDE-use-project-prefix (= (length sources) 1))
+        (setq project-prefix
+              (concat (file-name-as-directory (concat "[" (projectIDE-get-project-name (car sources)) "] ")) " ")))
+
+      ;; Create promt-folder-list from different source
+      (dolist (source sources)
+        (if project-prefix
+            (progn
+              (setq prompt (projectIDE-get-folder-list source nil nil (projectIDE-caller 'projectIDE-open-folder)))
+              (setq prompt (mapcar (apply-partially 'concat project-prefix) prompt)))
+          (setq prompt (nconc prompt (projectIDE-get-folder-list source t nil (projectIDE-caller 'projectIDE-open-folder))))))
+      (setq choice (projectIDE-prompt "Open folder: " prompt))
+      
+      (when project-prefix
+        (setq choice 
+              (concat
+               (projectIDE-get-project-path (car sources))
+               (string-remove-prefix project-prefix choice))))
+      
+      (unless (file-exists-p choice)
+        (projectIDE-message-handle 'Warning
+                                   (format "%s no longer exist.\nYou may need to call `projectIDE-update-cache' first." choice)
+                                   t
+                                   'projectIDE-open-folder)
+        (throw 'Error nil))
+
+      (when otherwindow
+        (projectIDE-other-window))
+      
+      (dired choice))))
+
+
+
+(defun projectIDE-open-folder-other-window (prefix)
+  
+  "Wrapper of `projectIDE-open-folder' to open file
+in other window."
+
+  (interactive "p")
+  (funcall 'projectIDE-open-folder prefix t))
 
 (defun projectIDE-get-file-list (signature &optional full filter caller)
   
@@ -1523,9 +1573,7 @@ When OTHERWINDOW is provided , associated file is opened in other window."
               (setq filelist (projectIDE-generate-association-list))
               (projectIDE-set-file-association filelist))
           (projectIDE-message-handle 'Warning
-                                     (format "Project [%s] set to not generate file association.
-                                              You can change the behaviour by setting \"cachemode\" in \".projectIDE\" file."
-                                             (projectIDE-get-project-name signature))
+                                     (format "Project [%s] set to not generate file association.\nYou can change the behaviour by setting \"cachemode\" in \".projectIDE\" file." (projectIDE-get-project-name signature))
                                      t
                                      (projectIDE-caller 'projectIDE-switch-association))
           (throw 'Error nil)))
@@ -1536,12 +1584,12 @@ When OTHERWINDOW is provided , associated file is opened in other window."
                                      t
                                      (projectIDE-caller 'projectIDE-switch-association))
         (if (= prefix 1)
-            (let ((pos (position (buffer-file-name) filelist :test 'equal)))
+            (let ((pos (cl-position (buffer-file-name) filelist :test 'equal)))
               (if (= (1+ pos) (length filelist))
                   (find-file (nth 0 filelist))
                 (find-file (nth (1+ pos) filelist))))
           (let (choice
-                projectIDE-prefix
+                project-prefix
                 projectRoot)
             (when projectIDE-use-project-prefix
               (setq projectRoot (projectIDE-get-project-path signature))
@@ -1568,8 +1616,6 @@ association at other window."
 
   (interactive "p")
   (funcall 'projectIDE-switch-association prefix t))
-
-  
 
 
 
@@ -1776,6 +1822,7 @@ association at other window."
             (projectIDE-timer-function))
           
           (setq projectIDE-p t)
+          (projectIDE-mode 1)
           
           (let ((buffers (buffer-list)))
             (dolist (buffer buffers)
@@ -1789,6 +1836,8 @@ association at other window."
                                  (projectIDE-caller 'projectIDE-initialize)))
     projectIDE-p))
 
+
+
 (defun projectIDE-terminate ()
   
   "Terminate projectIDE."
@@ -1799,6 +1848,7 @@ association at other window."
       (cancel-timer projectIDE-timer-primary))
     (when projectIDE-timer-idle
       (cancel-timer projectIDE-timer-idle))
+    (projectIDE-mode 0)
     (remove-hook 'find-file-hook 'projectIDE-identify-project)
     (remove-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
     (advice-remove 'save-buffers-kill-emacs  #'projectIDE-before-emacs-kill)

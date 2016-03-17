@@ -45,9 +45,15 @@ Descrip.:\t A project based unique ID."
   (dolist (module (projectIDE-get-modules signature))
     (setq projectIDE-current-loading-module module)
     (require module nil t)
+    (let ((function (projectIDE-get-function
+                     (intern
+                      (concat (symbol-name projectIDE-current-loading-module) "-initialize")))))
+
+      (when function))
     (setq projectIDE-current-loading-module nil)))
 
 (defun projectIDE-module-diff (signature-old signature-new)
+  
   "Returns a list of module difference of two projects
 specified by SIGNATURE-OLD and SIGNATURE-NEW.
 The car of the returned list is the new modules needed to be added.
@@ -75,11 +81,17 @@ Descrip.:\t Signature of project."
         (push module minus)))
     (cons plus minus)))
 
+(defun proejctIDE-realize (name)
+  (let* ((function (projectIDE-get-function name))
+         (type ())
+         )
+    
 
+    ))
 
 (defun projectIDE-realize-defun (name)
   "Produce real function for `defun' type with NAME."
-  (let* ((function (gethash name projectIDE-runtime-functions))
+  (let* ((function (projectIDE-get-function name))
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
@@ -91,7 +103,7 @@ Descrip.:\t Signature of project."
 
 (defun projectIDE-realize-cl-defun (name)
   "Produce real function for `cl-defun' type with NAME."
-  (let* ((function (gethash name projectIDE-runtime-functions))
+  (let* ((function (projectIDE-get-function name))
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
@@ -103,7 +115,7 @@ Descrip.:\t Signature of project."
 
 (defun projectIDE-realize-defmacro (name)
   "Produce real macro for `demacro' type with NAME."
-  (let* ((function (gethash name projectIDE-runtime-functions))
+  (let* ((function (projectIDE-get-function name))
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
@@ -112,7 +124,7 @@ Descrip.:\t Signature of project."
 
 (defun projectIDE-realize-cl-defmacro (name)
   "Produce real macro for `cl-demacro' type with NAME."
-  (let* ((function (gethash name projectIDE-runtime-functions))
+  (let* ((function (projectIDE-get-function name))
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))

@@ -60,6 +60,7 @@
 ;;fff (defun projectIDE-add-to-list (list element))
 ;;fff (defun projectIDE-append (list1 list2))
 ;;fff (defun projectIDE-manipulate-filter (projectRoot list))
+;;fff (defun projectIDE-prompt (prompt choices &optional initial-input))
 
 (defun projectIDE-concat-regexp (list)
   "Return a single regexp string from a LIST of separated regexp.
@@ -180,7 +181,128 @@ Descip.:\t A string list which each entry is to be prefixed."
                                                    "\\'"))))
     (projectIDE-concat-regexp return)))
 
+
+
+(defun projectIDE-prompt (prompt choices &optional initial-input)
+  
+  "Create a PROMPT to choose from CHOICES which is a list.
+Return the selected result.
+
+Return
+Type:\t\t type of the CHOICES list
+Descrip.:\t Return the user choice.
+
+PROMPT
+Type:\t\t string
+Descrip.: Prompt message.
+
+CHOICES
+Type:\t\t list of any type
+Descrip.: A list of choices to let user choose.
+
+INITIAL-INPUT
+Type:\t\t string
+Descrip.:\t Initial input for the prompt."
+  
+  (cond
+     ;; ido
+     ((eq projectIDE-completion-system 'ido)
+      (ido-completing-read prompt choices nil nil initial-input))
+     ;; helm
+     ((eq projectIDE-completion-system 'helm)
+      (if (fboundp 'helm-comp-read)
+          (helm-comp-read prompt choices
+                          :initial-input initial-input
+                          :candidates-in-buffer t
+                          :must-match 'confirm)
+        (projectIDE-message-handle 'Warning
+                                   "Problem implementing helm completion. Please check `projectIDE-completion-system'.
+                                    projectIDE will use default completion instead."
+                                   t
+                                   (projectIDE-caller 'projectIDE-prompt))
+        (completing-read prompt choices nil nil initial-input)))
+     ;; grizzl
+     ((eq projectIDE-completion-system 'grizzl)
+      (if (and (fboundp 'grizzl-completing-read)
+               (fboundp 'grizzl-make-index))
+          (grizzl-completing-read prompt (grizzl-make-index choices))
+        (projectIDE-message-handle 'Warning
+                                   "Problem implementing grizzl completion. Please check `projectIDE-completion-system'.
+                                    projectIDE will use default completion instead."
+                                   t
+                                   (projectIDE-caller 'projectIDE-prompt))
+        (completing-read prompt choices nil nil initial-input)))
+     ;; ivy
+     ((eq projectIDE-completion-system 'ivy)
+      (if (fboundp 'ivy-completing-read)
+          (ivy-completing-read prompt choices nil nil initial-input)
+        (projectIDE-message-handle 'Warning
+                                   "Problem implementing ivy completion. Please check `projectIDE-completion-system'.
+                                    projectIDE will use default completion instead."
+                                   t
+                                   (projectIDE-caller 'projectIDE-prompt))
+        (completing-read prompt choices nil nil initial-input)))
+     ;; default
+     (t (completing-read prompt choices nil nil initial-input))))
+
 ;; General function ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; projectIDE modes
+(defvar projectIDE-config-font-lock-keywords
+  
+  '(("^#+.*$" . font-lock-comment-face)
+    ("\\(^signature\\)\\( *= *\\)\\(.*$\\)"
+     (1 'font-lock-function-name-face)
+     (3 'font-lock-warning-face))
+    ("^name\\|^cachemode" . font-lock-function-name-face)
+    ("^exclude\\|^whitelist\\|^module" . font-lock-builtin-face)
+    ("^scope" . font-lock-type-face)
+    ("=" . font-lock-keyword-face)
+    ("\\(^[[:digit:][:alpha:]]+.*\\)="
+     (1 'font-lock-variable-name-face)))
+  
+   "Keyword highlighting specification for `projectIDE-config-mode-hook'.")
+
+(define-derived-mode projectIDE-config-mode nil "projectIDE-config"
+  
+  "Major mode for editing \".projectIDE\" project config.
+Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
+  
+  (setq-local font-lock-defaults
+              '(projectIDE-config-font-lock-keywords))
+  (add-hook 'after-save-hook 'projectIDE-verify-config nil t))
+
+(defvar projectIDE-keymap (make-sparse-keymap)
+  "The project specific keymap for projectIDE mode.")
+
+(define-minor-mode projectIDE-mode
+  "projectIDE mode for project specific keymap."
+  :lighter " projectIDE"
+  :global t
+  :keymap projectIDE-keymap)
+
+
+;;; projectIDE modes ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -1312,9 +1434,16 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
 
   (let ((cache (gethash signature projectIDE-runtime-cache)))
-    (if cahce
+    (if cache
         (projectIDE-project-module (projectIDE-cache-project cache))
       nil)))
+
+
+(defun projectIDE-get-module-var (signature module var-name)
+  (let* ((cache (gethash signature projectIDE-runtime-cache))
+         (project (and cache (projectIDE-cache-project cache)))
+         (values (and project (projectIDE-project-module-var project))))
+    (lax-plist-get values (concat (symbol-name module) "-" (symbol-name var-name)))))
 
 
 
@@ -1580,21 +1709,18 @@ Descrip.:\t If buffer is not provided, current buffer is used."
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; projectIDE module
+
+(defvar projectIDE-runtime-packages nil
+  "Store and manage modules.")
+
+(defvar projectIDE-runtime-functions nil
+  "Store and manage project specific functions.")
+
+(defvar projectIDE-key-table nil
+  "Store keymap for modules.")
+
 (cl-defstruct projectIDE-package
   name
   functions
@@ -1613,24 +1739,34 @@ Descrip.:\t If buffer is not provided, current buffer is used."
   "Store the current loading module.
 It will be non-nil only while loading a module.")
 
-(defvar projectIDE-runtime-packages nil
-  "Store and manage modules.")
+(defvar projectIDE-active-module-signature nil
+  "Store the module signature that is current in use.")
 
-(defvar projectIDE-runtime-functions nil
-  "Store and manage project specific functions.")
+
+
 
 (defun projectIDE-register (package function)
+  
   "Register FUNCTION from PACKAGE to `projectIDE-runtime-packages'."
-  (let ((pack (plist-get projectIDE-runtime-packages package)))
+  
+  (let ((pack (lax-plist-get projectIDE-runtime-packages package)))
     (if pack
         (setf (projectIDE-package-functions pack)
               (projectIDE-add-to-list (projectIDE-package-functions pack) function))
-      (setq projectIDE-runtime-packages (plist-put
+      (setq projectIDE-runtime-packages (lax-plist-put
                                          projectIDE-runtime-packages
                                          package
                                          (make-projectIDE-package :name package :functions (list function)))))))
 
+
+
 (defmacro projectIDE-defun (name args &rest body)
+  
+  "A wrapper to `defun' that put the function in `projectIDE-runtime-functions'
+instead of defining it directly.
+
+The function defined by `projectIDE-defun' will be managed by projectIDE."
+  
   (projectIDE-register projectIDE-current-loading-module name)
   (puthash
    name
@@ -1638,10 +1774,19 @@ It will be non-nil only while loading a module.")
                              :type 'defun
                              :args args
                              :docstring (and (stringp (car body)) (car body))
-                             :body (or (and (stringp (car body)) (cdr body)) body))
+                             :body (or (and (stringp (car body)) (cdr body)) body)
+                             :key (plist-get projectIDE-key-table 'name))
    projectIDE-runtime-functions))
 
+
+
 (defmacro projectIDE-cl-defun (name args &rest body)
+  
+    "A wrapper to `cl-defun' that put the function in `projectIDE-runtime-functions'
+instead of defining it directly.
+
+The function defined by `projectIDE-cl-defun' will be managed by projectIDE."
+    
   (projectIDE-register projectIDE-current-loading-module name)
   (puthash
    name
@@ -1649,10 +1794,19 @@ It will be non-nil only while loading a module.")
                              :type 'cl-defun
                              :args args
                              :docstring (and (stringp (car body)) (car body))
-                             :body (or (and (stringp (car body)) (cdr body)) body))
+                             :body (or (and (stringp (car body)) (cdr body)) body)
+                             :key (plist-get projectIDE-key-table 'name))
    projectIDE-runtime-functions))
 
+
+
 (defmacro projectIDE-defmacro (name args &rest body)
+
+    "A wrapper to `demacro' that put the function in `projectIDE-runtime-functions'
+instead of defining it directly.
+
+The function defined by `projectIDE-defmacro' will be managed by projectIDE."
+    
   (projectIDE-register projectIDE-current-loading-module name)
   (puthash
    name
@@ -1660,10 +1814,17 @@ It will be non-nil only while loading a module.")
                              :type 'defmacro
                              :args args
                              :docstring (and (stringp (car body)) (car body))
-                             :body (or (and (stringp (car body)) (cdr body)) body))
+                             :body (or (and (stringp (car body)) (cdr body)) body)
+                             :key (plist-get projectIDE-key-table 'name))
    projectIDE-runtime-functions))
 
 (defmacro projectIDE-cl-defmacro (name args &rest body)
+    
+    "A wrapper to `cl-defmarco' that put the function in `projectIDE-runtime-functions'
+instead of defining it directly.
+
+The function defined by `projectIDE-cl-defmarco' will be managed by projectIDE."
+    
   (projectIDE-register projectIDE-current-loading-module name)
   (puthash
    name
@@ -1671,8 +1832,31 @@ It will be non-nil only while loading a module.")
                              :type 'cl-defmacro
                              :args args
                              :docstring (and (stringp (car body)) (car body))
-                             :body (or (and (stringp (car body)) (cdr body)) body))
+                             :body (or (and (stringp (car body)) (cdr body)) body)
+                             :key (plist-get projectIDE-key-table 'name))
    projectIDE-runtime-functions))
+
+
+
+;; Getter and setter functions
+
+(defun projectIDE-get-function (function)
+  
+  "Return a `projectIDE-function' object from `projectIDE-runtime-functions'
+if FUNCTION exists, otherwise return nil.
+
+Return
+Type:\t\t proejctIDE-function object or nil
+Descrip.:\t\t Function object that has been defined by either
+\t\t\t `projectIDE-defun', `porjectIDE-cl-defun',
+\t\t\t `projectIDE-defmarco', `projectIDE-cl-defmarco'.
+\t\t\t Or return nil if no such record.
+
+FUNCTION
+Type:\t\t symbol
+Descrip.:\t\t Name of function."
+  
+  (gethash function projectIDE-runtime-functions))
 
 ;; projectIDE module endls
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
