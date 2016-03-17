@@ -35,6 +35,7 @@
 (require 'projectIDE-header)
 (require 'projectIDE-debug)
 (require 'projectIDE-fstream)
+(require 'projectIDE-module)
 
 ;;; Config file function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;fff (defun projectIDE-parse-config (file &optional errormessage caller))
@@ -102,7 +103,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      errormessage
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
                           (throw 'parse-error nil))
-                        (setf (projectIDE-project-signature project) (string-trim (buffer-substring-no-properties (point) line-end))))
+                        (setf (projectIDE-project-signature project) (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
                        
                        ((= counter 1) ;; "^name *="
                         (when (projectIDE-project-name project)
@@ -111,7 +112,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      errormessage
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
                           (throw 'parse-error nil))
-                        (setf (projectIDE-project-name project) (string-trim (buffer-substring-no-properties (point) line-end))))
+                        (setf (projectIDE-project-name project) (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
                        
                        ((= counter 2) ;; "^exclude *="
                         (let ((exclude-list
@@ -149,7 +150,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
                           (throw 'parse-error nil))
                         (setf (projectIDE-project-cachemode project)
-                              (string-to-number (string-trim (buffer-substring-no-properties (point) line-end)))))
+                              (string-to-number (projectIDE-trim-string (buffer-substring-no-properties (point) line-end)))))
                        
                        ((= counter 5) ;; "^module *="
                         (let ((modules (projectIDE-project-module project))
@@ -159,7 +160,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                           (setf (projectIDE-project-module project) modules)))
 
                        ((= counter 6) ;; "^scope *="
-                        (setq scope (string-trim (buffer-substring-no-properties (point) line-end))))
+                        (setq scope (projectIDE-trim-string (buffer-substring-no-properties (point) line-end))))
 
                        ((= counter 7) ;; "^[[:digit:][:alpha:]]+ *="
                         (let ((module-var (projectIDE-project-module-var project))
@@ -174,9 +175,9 @@ Descrip.:\t Function list calling this function for debug purpose."
                                       (throw 'parse-error nil))))
                               (name (concat scope (and scope "-")
                                      (string-remove-suffix "="
-                                      (string-trim
+                                      (projectIDE-trim-string
                                        (buffer-substring-no-properties (line-beginning-position) (point)))))))
-                          (setq module-var (plist-put module-var name var))
+                          (setq module-var (lax-plist-put module-var name var))
                           (setf (projectIDE-project-module-var project) module-var)))
                         
                        (setq found t)))

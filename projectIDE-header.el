@@ -93,12 +93,8 @@ Descrip.:\t Trimmed string or nil if blank string.
 STRING
 Type:\t\t string
 Descrip.:\t String to be trimmed."
-  (let ((return-string
-         (replace-regexp-in-string (rx (or (: bos (* (any " \t\n")))
-                                           (: (* (any " \t\n")) eos)))
-                                   ""
-                                   string)))
-    ;; Return value
+  
+  (let ((return-string (string-trim string)))
     (if (string= return-string "")
         nil
       return-string)))
@@ -1749,11 +1745,11 @@ It will be non-nil only while loading a module.")
   
   "Register FUNCTION from PACKAGE to `projectIDE-runtime-packages'."
   
-  (let ((pack (lax-plist-get projectIDE-runtime-packages package)))
+  (let ((pack (plist-get projectIDE-runtime-packages package)))
     (if pack
         (setf (projectIDE-package-functions pack)
               (projectIDE-add-to-list (projectIDE-package-functions pack) function))
-      (setq projectIDE-runtime-packages (lax-plist-put
+      (setq projectIDE-runtime-packages (plist-put
                                          projectIDE-runtime-packages
                                          package
                                          (make-projectIDE-package :name package :functions (list function)))))))
@@ -1840,10 +1836,27 @@ The function defined by `projectIDE-cl-defmarco' will be managed by projectIDE."
 
 ;; Getter and setter functions
 
-(defun projectIDE-get-function (function)
+(defun projectIDE-get-all-functions-from-module (name)
+  
+  "Return a list of functions defined by module with NAME.
+
+Return
+Type\t\t: list of symbol or nil
+Descrip.:\t A list of functions definded in specified module.
+\t\t\t Return nil, if either module was not loaded
+\t\t\t or no functions defined in module.
+
+NAME
+Type:\t\t symbol
+Descrip.:\t\t Name of function."
+
+  (let ((module (plist-get projectIDE-runtime-packages name)))
+    (and module (projectIDE-package-functions module))))
+
+(defun projectIDE-get-function-object (name)
   
   "Return a `projectIDE-function' object from `projectIDE-runtime-functions'
-if FUNCTION exists, otherwise return nil.
+if function of name exists, otherwise return nil.
 
 Return
 Type:\t\t proejctIDE-function object or nil
@@ -1852,11 +1865,31 @@ Descrip.:\t\t Function object that has been defined by either
 \t\t\t `projectIDE-defmarco', `projectIDE-cl-defmarco'.
 \t\t\t Or return nil if no such record.
 
-FUNCTION
+NAME
 Type:\t\t symbol
 Descrip.:\t\t Name of function."
   
-  (gethash function projectIDE-runtime-functions))
+  (gethash name projectIDE-runtime-functions))
+
+(defun projectIDE-get-function-object-type (name)
+
+  "Return the type of defing of function given by NAME
+from `projectIDE-runtime-functions'.
+The type may either be 'defun, 'cl-defun, 'defmacro or
+cl-defmacro.
+
+Return
+Type:\t\t symbol
+Descrip.:\t Type of defining of function.
+\t\t\t Return nil if function of NAME not found.
+
+NAME
+Type:\t\t symbol
+Descrip.:\t\t Name of function."
+
+  (let* ((function (gethash name projectIDE-runtime-functions))
+         (type (and function (projectIDE-function-type function))))
+    type))
 
 ;; projectIDE module endls
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

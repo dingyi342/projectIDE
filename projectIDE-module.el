@@ -32,9 +32,84 @@
 (require 'cl-lib)
 (require 'projectIDE-header)
 (require 'projectIDE-debug)
-(require 'projectIDE-fstream)
 
-(defun projectIDE-load-module (signature)
+(defun projectIDE-load-module (name)
+  
+  "Attempt to load module given by NAME.
+If module does not exist, just omits it.
+
+NAME
+Type:\t\t symbol
+Descrip.:\t Symbol of the module name."
+
+  (setq projectIDE-current-loading-module name)
+  (require name nil t)
+  (let ((initializer (intern (concat (symbol-name name) "-initialize"))))
+    (when (projectIDE-get-function-object initializer)
+      (projectIDE-realize initializer)
+      (apply initializer)))
+  (setq projectIDE-current-loading-module nil))
+
+
+
+(defun projectIDE-unload-module (name)
+  
+  "Attempt to unload module given by NAME.
+If module did not, just omits it.
+
+NAME
+Type:\t\t symbol
+Descrip.:\t Symbol of the module name."
+
+  ;; Run the module terminate function
+  (let ((terminator (intern (concat (symbol-name name) "-terminate"))))
+    (when (projectIDE-get-function-object terminator)
+      (projectIDE-realize terminator)
+      (apply terminator)))
+
+  ;; Unbind all functions in module
+  ;; Remove function records in projectIDE-runtime-functions
+  (let ((functions (projectIDE-get-all-functions-from-module name)))
+    (dolist (function functions)
+      (fmakunbound function)
+      (remhash function projectIDE-runtime-functions)))
+
+  ;; Remove module record
+  (cl-remf projectIDE-runtime-packages name)
+
+  ;; Unload the whole package
+  (with-demoted-errors (unload-feature name)))
+
+
+
+(defun projectIDE-activate-module (module)
+  
+  "Activate MODULE.
+
+MODULE
+Type:\t\t symbol
+Descrip.:\t Symbol of the module name."
+
+   (let ((functions (projectIDE-get-all-functions-from-module module)))
+    (dolist (function functions)
+      (projectIDE-realize-function function))))
+
+
+
+(defun projectIDE-deactivate-module (module)
+  
+  "Deactivate MODULE.
+
+MODULE
+Type:\t\t symbol
+Descrip.:\t Symbol of the module name."
+
+   (let ((functions (projectIDE-get-all-functions-from-module module)))
+    (dolist (function functions)
+      (fmakunbound function))))
+
+
+(defun projectIDE-load-all-modules (signature)
   
   "Load module of project given by signature.
 
@@ -43,14 +118,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (dolist (module (projectIDE-get-modules signature))
-    (setq projectIDE-current-loading-module module)
-    (require module nil t)
-    (let ((function (projectIDE-get-function
-                     (intern
-                      (concat (symbol-name projectIDE-current-loading-module) "-initialize")))))
+    (projectIDE-load-module name)))
 
-      (when function))
-    (setq projectIDE-current-loading-module nil)))
+
 
 (defun projectIDE-module-diff (signature-old signature-new)
   
@@ -81,17 +151,29 @@ Descrip.:\t Signature of project."
         (push module minus)))
     (cons plus minus)))
 
-(defun proejctIDE-realize (name)
-  (let* ((function (projectIDE-get-function name))
-         (type ())
-         )
-    
 
-    ))
+
+
+(defun projectIDE-realize-function (name)
+  
+  "Attempt to realize the function given by NAME.
+If NAME cannot be found in `projectIDE-runtime-functions', return nil."
+  
+  (let ((type (projectIDE-get-function-object-type name)))
+    (cond
+     ((eq type 'defun)
+      (projectIDE-realize-defun name))
+     ((eq type 'cl-defun)
+      (projectIDE-realize-cl-defun name))
+     ((eq type 'defmacro)
+      (projectIDE-realize-defmacro name))
+     ((eq type 'cl-defmacro)
+      (projectIDE-realize-cl-defmacro name))
+     ((t nil)))))
 
 (defun projectIDE-realize-defun (name)
   "Produce real function for `defun' type with NAME."
-  (let* ((function (projectIDE-get-function name))
+  (let* ((function (projectIDE-get-function-object name))
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
@@ -103,7 +185,7 @@ Descrip.:\t Signature of project."
 
 (defun projectIDE-realize-cl-defun (name)
   "Produce real function for `cl-defun' type with NAME."
-  (let* ((function (projectIDE-get-function name))
+  (let* ((function (projectIDE-get-function-object name))
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
@@ -115,7 +197,7 @@ Descrip.:\t Signature of project."
 
 (defun projectIDE-realize-defmacro (name)
   "Produce real macro for `demacro' type with NAME."
-  (let* ((function (projectIDE-get-function name))
+  (let* ((function (projectIDE-get-function-object name))
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
@@ -124,7 +206,7 @@ Descrip.:\t Signature of project."
 
 (defun projectIDE-realize-cl-defmacro (name)
   "Produce real macro for `cl-demacro' type with NAME."
-  (let* ((function (projectIDE-get-function name))
+  (let* ((function (projectIDE-get-function-object name))
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))

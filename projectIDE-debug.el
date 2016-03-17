@@ -130,6 +130,15 @@ Only for debug purpose."
                     (comment-region beg (point))))
   (message "Done"))
 
+(defun pdm (&rest args)
+  "Stand for print debug message."
+  (if args
+      (progn
+        (message "[projectIDE::Debug] This is the start or projectIDE-debug.")
+        (dolist (arg args)(pp arg))
+        (message "[projectIDE::Debug] This is the end or projectIDE-debug."))
+    (message "[projectIDE::Debug] This is a projectIDE debug message~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")))
+
 (defun projectIDE-debug-mode-on ()
   "An interative function to turn on debug mode.
 Debug mode only print extra infomation to log file."
