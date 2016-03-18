@@ -26,10 +26,11 @@
 ;; Boston, MA 02110-1301, USA.
 ;;
 ;;; Commentary:
+;;
 ;; This files provides variables and funtions supporting all projectIDE-X.el
 ;;
-;;
 ;;; code:
+
 (require 'cl-lib)
 (require 'fdex)
 
@@ -63,6 +64,7 @@
 ;;fff (defun projectIDE-prompt (prompt choices &optional initial-input))
 
 (defun projectIDE-concat-regexp (list)
+  
   "Return a single regexp string from a LIST of separated regexp.
 
 Return
@@ -75,14 +77,14 @@ Type:\t\t string list
 Descrip.:\t A string list of regexp."
   
   (let (regexp)
-    (dolist (val list regexp)
-      (if regexp
-          (setq regexp (concat val "\\|" regexp))
-        (setq regexp val)))))
+    (dolist (val (reverse list) regexp)
+      (setq regexp
+            (concat val (and regexp (concat "\\|" regexp)))))))
 
 
 
 (defun projectIDE-trim-string (string)
+  
   "Return trimmed leading and tailing whitespace from STRING.
 If the return string is a null string, return nil instead.
 
@@ -99,13 +101,19 @@ Descrip.:\t String to be trimmed."
         nil
       return-string)))
 
-(defun projectIDE-add-to-list (list element)
+
+
+(cl-defun projectIDE-add-to-list (list element &key test)
+  
   "Adds ELEMENT to LIST if it isn't there yet.
 Place ELEMENT to the first of the list if it is already in the list.
 It handles all situation when LIST or ELEMENT is nil.
 This function does not modify the original list.
 Instead, it returns a new list.
 In addition, it accepts non-symbol LIST.
+
+Key TEST can be provided to test for equal.
+It is default `equal'.
 
 This function is expensive in term of efficency.
 Avoid to use in heavy loop.
@@ -121,18 +129,25 @@ Descrip.:\t List to be checked and appended to.
 ELEMENT
 Type:\t\t same type of LIST element
 Descrip.:\t Add to LIST if ELEMENT isn't there yet."
+  
   (let ((newlist (copy-tree list)))
     (if newlist
         (when element
-          (setq newlist (cl-remove element newlist :test 'equal))
+          (setq newlist (cl-remove element newlist :test (or test 'equal)))
           (setq newlist (nconc (list element) newlist)))
       (when element
         (setq newlist (list element))))
     newlist))
 
-(defun projectIDE-append (list1 list2)
+
+
+(cl-defun projectIDE-append (list1 list2 &key test)
+  
   "Return a combined list of LIST1 and LIST2 and prevent duplication.
 It accepts non-symbol LIST.
+
+Key TEST can be provided to test for equal.
+It is default `equal'.
 
 This function is expensive in term of efficency.
 Avoid to use in heavy loop.
@@ -144,11 +159,15 @@ Descrip.:\t Combined list of LIST1 and LIST2.
 LIST1/LIST2
 Type:\t list of any type
 Descrip.:\t List to be combined."
+  
   (let (newlist)
     (setq newlist (append list1 list2))
-    (cl-remove-duplicates newlist :test 'equal)))
+    (cl-remove-duplicates newlist :test (or test 'equal))))
+
+
 
 (defun projectIDE-manipulate-filter (projectRoot list)
+  
   "This function add the PROJECTROOT as a prefix to each entry in the LIST.
 It also ajusts the regexp in the list so that
 1) \"*\" is converted to \".*\" to provide wildcard function
@@ -264,6 +283,7 @@ Descrip.:\t Initial input for the prompt."
 
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;; projectIDE modes
+
 (defvar projectIDE-config-font-lock-keywords
   
   '(("^#+.*$" . font-lock-comment-face)
@@ -279,6 +299,8 @@ Descrip.:\t Initial input for the prompt."
   
    "Keyword highlighting specification for `projectIDE-config-mode-hook'.")
 
+
+
 (define-derived-mode projectIDE-config-mode nil "projectIDE-config"
   
   "Major mode for editing \".projectIDE\" project config.
@@ -288,8 +310,12 @@ Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
               '(projectIDE-config-font-lock-keywords))
   (add-hook 'after-save-hook 'projectIDE-verify-config nil t))
 
+
+
 (defvar projectIDE-keymap (make-sparse-keymap)
   "The project specific keymap for projectIDE mode.")
+
+
 
 (define-minor-mode projectIDE-mode
   "projectIDE mode for project specific keymap."
@@ -297,6 +323,23 @@ Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
   :global t
   :keymap projectIDE-keymap)
 
+
+
+(defun projectIDE-set-key (key command)
+  
+  "Give KEY a project specific binding as COMMAND.
+COMMAND is the command definition to use; usually it is
+a symbol naming an interactively-callable function.
+KEY is a key sequence; noninteractively, it is a string or vector
+of characters or event types, and non-ASCII characters with codes
+above 127 (such as ISO Latin-1) can be included if you use a vector.
+
+Note that KEY won't take into effect until
+its modules has been activated."
+  
+  (or (vectorp key) (stringp key)
+      (signal 'wrong-type-argument (list 'arrayp key)))
+  (setq projectIDE-key-table (plist-put projectIDE-key-table command key)))
 
 ;;; projectIDE modes ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -318,9 +361,9 @@ Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
 
 
 
-
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;; projectIDE group
+
 (defgroup projectIDE nil
   "Managing projects like an IDE."
   :tag "projectIDE"
@@ -330,6 +373,11 @@ Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
 (defgroup projectIDE-global nil
   "Global setting for all projects."
   :tag "Enviroment Values"
+  :group 'projectIDE)
+
+(defgroup projectIDE-window nil
+  "Buffer window setting for all projectIDE."
+  :tag "Buffer window setting"
   :group 'projectIDE)
 
 (defgroup projectIDE-config-file nil
@@ -348,8 +396,13 @@ Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
   :group 'projectIDE)
 
 (defgroup projectIDE-caching nil
-  "Setting for project caching"
+  "Setting for project caching."
   :tag "Project caching"
+  :group 'projectIDE)
+
+(defgroup projectIDE-module nil
+  "Setting for project module."
+  :tag "Project module"
   :group 'projectIDE)
 
 (defgroup projectIDE-hook nil
@@ -450,6 +503,7 @@ Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
   "Enable projectIDE background services like updating cache."
   :type 'bool
   :group 'projectIDE-global)
+
 ;; Environmental Variable ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -583,7 +637,7 @@ A sum of these cache modes you want to enable."
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Project creation variable
 ;;vvv (defcustom projectIDE-create-defaultDir)
-;;vvv (defcustom projectIDE-global-project-create-hook)
+;;vvv (defcustom projectIDE-project-create-hook)
 ;;vvv (defcustom projectIDE-create-require-confirm)
 
 (defcustom projectIDE-create-defaultDir (getenv "HOME")
@@ -595,9 +649,9 @@ variable as the default directory."
   :type 'directory
   :group 'projectIDE-project-creation)
 
-(defcustom projectIDE-global-project-create-hook nil
+(defcustom projectIDE-project-create-hook nil
   "Hook runs when creating project."
-  :tag "projectIDE-global-project-create-hook"
+  :tag "projectIDE-project-create-hook"
   :type 'hook
   :group 'projectIDE-project-creation
   :group 'projectIDE-hook)
@@ -635,8 +689,12 @@ Other values ask for the confirmation."
 
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Project or file opening variable
+;;vvv (defcustom projectIDE-open-project-prompt-type)
+;;vvv (defcustom projectIDE-open-last-opened-files)
+;;vvv (defcustom projectIDE-use-project-prefix)
+
 (defcustom projectIDE-open-project-prompt-type 'name
-  "Define how projects are prompt when calling `projectIDE-open-project'.
+  "Define how projects are prompted when calling `projectIDE-open-project'.
 It can be either name or path."
   :tag "Open project promt type"
   :type '(radio
@@ -656,29 +714,112 @@ It can be either name or path."
   :type 'bool
   :group 'projectIDE-opening)
 
-(defcustom projectIDE-open-file-update-cache t
-  "For the first time opening a file from a project, update the project cache."
-  :tag "Update cache when first opening a file from a project?"
-  :type 'bool
-  :group 'projectIDE-opening)
+;; Project or file opening variable ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-(defcustom projectIDE-max-window-number 2
-  "The max number of visible window projectIDE can open."
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Project window variable
+
+(defcustom projectIDE-max-horizontal-window 2
+  "The max number of visible horizontal window(s) projectIDE can open."
   :tag "Open project promt type"
   :type 'integer
-  :group 'projectIDE-opening)
+  :group 'projectIDE-window)
 
-(defcustom projectIDE-other-window-direction 'right
-  "The preferred opening location of other window."
+(defcustom projectIDE-max-vertical-window 2
+  "The max number of visible vertical window(s) projectIDE can open."
   :tag "Open project promt type"
-  :type '(radio
-          (const :tag "right" right)
-          (const :tag "left" left)
-          (const :tag "below" below)
-          (const :tag "above" above))
-  :group 'projectIDE-opening)
+  :type 'integer
+  :group 'projectIDE-window)
 
-;; Project or file opening variable ends
+(defcustom projectIDE-other-window-priority
+  '(horizontal vertical)
+  "Priority of creating/switching new window.
+Can only be \"horizontal\" or \"vertical\""
+  :tag "Other window priority"
+  :type '(list
+          (symbol :tag "1st" horizontal)
+          (symbol :tag "2nd" vertical))
+  :group 'projectIDE-window)
+
+(defcustom projectIDE-other-window-horizontal-priority
+  '(right left)
+  "Priority of creating/switching new window.
+Can only be \"right\" or \"left\""
+  :tag "Other window horizontal priority"
+  :type '(list
+          (symbol :tag "1st" right)
+          (symbol :tag "2nd" left))
+  :group 'projectIDE-window)
+
+(defcustom projectIDE-other-window-vertical-priority
+  '(below above)
+  "Priority of creating/switching new window.
+Can only be \"above\" or \"below\""
+  :tag "Other window horizontal priority"
+  :type '(list
+          (symbol :tag "1st" below)
+          (symbol :tag "2nd" above))
+  :group 'projectIDE-window)
+
+
+
+(defun projectIDE-other-window ()
+  
+  "Split or switch to other window in a smarter way."
+  
+  (interactive)
+  (let ((hor 1)
+        (ver 1)
+        test)
+    
+    (while (window-in-direction 'left test)
+      (setq test (window-in-direction 'left test)))
+    (while (window-in-direction 'right test)
+      (setq test (window-in-direction 'right test))
+      (setq hor (1+ hor)))
+    (setq test nil)
+    (while (window-in-direction 'above test)
+      (setq test (window-in-direction 'above test)))
+    (while (window-in-direction 'below test)
+      (setq test (window-in-direction 'below test))
+      (setq ver (1+ ver)))
+    
+    (unless (and (>= hor projectIDE-max-horizontal-window)
+                 (>= ver projectIDE-max-vertical-window))
+      (cond
+       ((> hor ver)
+        (split-window nil nil (car projectIDE-other-window-vertical-priority)))
+       ((< hor ver)
+        (split-window nil nil (car projectIDE-other-window-horizontal-priority)))
+       ((= hor ver)
+        (split-window nil nil
+                      (if (eq (car projectIDE-other-window-priority) 'vertical)
+                          (car projectIDE-other-window-vertical-priority)
+                        (car projectIDE-other-window-horizontal-priority))))))
+    
+    (other-window 1)))
+
+;; Project window variable ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -702,7 +843,7 @@ It can be either name or path."
 ;; Project caching variable
 
 (defcustom projectIDE-update-cache-interval 5
-  "The time interval updating project cache by one step."
+  "The time interval in second updating project cache by one step."
   :tag "Background update cache interval"
   :type 'integer
   :group 'projectIDE-caching)
@@ -731,6 +872,7 @@ It can be either name or path."
 
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Debug and logging variable
+
 (defcustom projectIDE-log-level 2
   "Logging level specifies what to be logged."
   :tag "Logging level"
@@ -764,16 +906,19 @@ It can be either name or path."
 
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Runtime Variable
+
 (defvar projectIDE-p nil
   "Indicate whether projectIDE is running.
 Never attempt to modify it directly.")
 
 (defvar projectIDE-debug-mode nil
   "Indicate whether projectIDE is in debug mode.
-Debug mode only add extra output to log file.")
+Debug mode only add extra output to log file.
+Never attempt to modify it directly.")
 
 (defvar projectIDE-last-message nil
-  "Record the last message.")
+  "Record the last message.
+Never attempt to modify it directly.")
 
 (defvar projectIDE-runtime-record nil
   ;; hash table
@@ -796,19 +941,27 @@ Never attempt to modify it directly.")
   "Trace buffer which is a projectIDE project.
 Never attempt to modify it directly.")
 
+(defvar projectIDE-active-project nil
+  "Store the current active project signature.
+Never attempt to modify it directly.")
+
 (defvar projectIDE-priority-update-file nil
   "To temporary store the file name to be saved at before-save hook.
-And cache this file at at `after-save-hook'.")
+And cache this file at at `after-save-hook'.
+Never attempt to modify it directly.")
 
 (defvar projectIDE-write-out-cache t
   "To determine whether projectIDE write cache to harddisk
-after closing the last file.")
+after closing the last file.
+Never attempt to modify it directly.")
 
 (defvar projectIDE-timer-primary nil
-  "Timer for `projectIDE-timer-function-primary' to repeat itself, or nil.")
+  "Timer for `projectIDE-timer-function-primary' to repeat itself, or nil.
+Never attempt to modify it directly.")
 
 (defvar projectIDE-timer-idle nil
-  "Timer for `projectIDE-timer-function-idle' to reschedule itself, or nil.")
+  "Timer for `projectIDE-timer-function-idle' to reschedule itself, or nil.
+Never attempt to modify it directly.")
 
 ;; Runtime variable ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -862,24 +1015,34 @@ after closing the last file.")
 ;;fff (defun projectIDE-set-project-last-open (signature))
 
 (defun projectIDE-get-all-singatures ()
+  
   "Get a list of all signatures found in projectIDE-runtime-record.
 
 Return
 Type:\t\t list of stirng or nil
 Descrip.:\t A list of signature in string in projectIDE-runtime-record.
 \t\t\tIf there is nothing in runtime record, return nil."
+  
   (hash-table-keys projectIDE-runtime-record))
 
+
+
 (defun projectIDE-get-all-records ()
+  
   "Get a list of all records found in projectIDE-runtime-record.
 
 Return
 Type:\t\t list of record objects or nil
 Descrip.:\t A list of record objects from projectIDE-runtime-record.
 \t\t\tIf there is nothing in runtime record, return nil."
+  
   (hash-table-values projectIDE-runtime-record))
 
+
+
+
 (defun projectIDE-get-record (signature)
+  
   "Get a reference to record object by SIGNATURE.
 Return nil with it is unable to find that signature.
 
@@ -890,9 +1053,13 @@ Descrip.:\t Return a record object if found or nil if not found.
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
+  
   (gethash signature projectIDE-runtime-record))
 
+
+
 (defun projectIDE-get-signature-by-path (path)
+  
   "Return signature by the best match of PATH in record.
 Record is search in projectIDE-runtime-record.
 
@@ -912,7 +1079,7 @@ Descript.:\t File or folder path in string."
     ;; Search all recods matched path
     (dolist (record records)
       (when (string-prefix-p (projectIDE-record-path record) path)
-        (add-to-list 'candidates (projectIDE-record-signature record))))
+        (cl-pushnew 'candidates (projectIDE-record-signature record) :test 'equal)))
 
     (setq signature (car candidates))
 
@@ -925,7 +1092,10 @@ Descript.:\t File or folder path in string."
     
     signature))
 
+
+
 (defun projectIDE-get-project-name (signature)
+  
 "Get the project name of given SIGNATURE.
 
 Return
@@ -935,9 +1105,13 @@ Descrip.:\t\t Name of project of the given signature.
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
+
   (projectIDE-record-name (gethash signature projectIDE-runtime-record)))
 
+
+
 (defun projectIDE-get-project-path (signature)
+  
   "Get the project root path of given SIGNATURE.
 Return nil if \".projectIDE\" no longer exists at path.
 
@@ -948,12 +1122,16 @@ Descrip.:\t\t Path to project root or nil if invalid project root.
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
+  
   (let ((path (projectIDE-record-path (gethash signature projectIDE-runtime-record))))
     (if (file-readable-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
         path
       nil)))
 
+
+
 (defun projectIDE-get-config-file-path (signature)
+  
   "Get the project config file path of given SIGNATURE.
 Return nil if \".projectIDE\" no longer exists at path.
 
@@ -965,6 +1143,7 @@ Descrip.:\t\t Path to project config file
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
+  
   (let ((path
          (concat (projectIDE-record-path
                   (gethash signature projectIDE-runtime-record))
@@ -973,7 +1152,10 @@ Descrip.:\t A project based unique ID."
         path
       nil)))
 
+
+
 (defun projectIDE-get-project-create-time (signature)
+  
   "Get the creation time of project given by SIGNATURE.
 
 Return
@@ -986,7 +1168,10 @@ Descrip.:\t A project based unique ID."
 
   (projectIDE-record-create-time (gethash signature projectIDE-runtime-record)))
 
+
+
 (defun projectIDE-get-project-last-open (signature)
+  
   "Get the last opened time of project given by SIGNATURE
 
 Return
@@ -999,7 +1184,10 @@ Descrip.:\t A project based unique ID."
 
   (projectIDE-record-last-open (gethash signature projectIDE-runtime-record)))
 
+
+
 (defun projectIDE-set-project-name (signature name)
+  
   "Set the project NAME of given SIGNATURE in projectIDE-runtime-record.
 
 NAME
@@ -1012,7 +1200,10 @@ Descrip.:\t A project based unique ID."
   
   (setf (projectIDE-record-name (gethash signature projectIDE-runtime-record)) name))
 
+
+
 (defun projectIDE-set-project-path (signature path)
+  
   "Set the project PATH of given SIGNATURE in projectIDE-runtime-record.
 
 NAME
@@ -1025,7 +1216,11 @@ Descrip.:\t A project based unique ID."
 
   (setf (projectIDE-record-path (gethash signature projectIDE-runtime-record)) path))
 
+
+
+
 (defun projectIDE-set-project-last-open (signature)
+  
   "Set the project last opened time given by SIGNATURE to current time.
 
 SIGNATURE
@@ -1058,6 +1253,7 @@ Descrip.:\t A project based unique ID."
 
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; cache and project object
+
 (cl-defstruct projectIDE-project
   signature                                    ;; string         eg. "173874102"
   name                                         ;; string         eg. "project1"
@@ -1091,6 +1287,7 @@ Descrip.:\t A project based unique ID."
 ;; Project object doesn't provide setter function
 ;; because it can only create by projectIDE-parse-config
 ;; The setter function of cache can only set cache in projectIDE-runtime-cache
+;;fff (defun projectIDE-get-all-caching-signature ())
 ;;fff (defun projectIDE-get-cache (signature))
 ;;fff (defun projectIDE-get-config-update-time (signature))
 ;;fff (defun projectIDE-get-project-exclude (signature))
@@ -1123,6 +1320,7 @@ Descrip.:\t A project based unique ID."
 ;;fff (defun projectIDE-flag-association-expired (signature))
 
 (defun projectIDE-get-all-caching-signature ()
+  
   "Get a list of project signature which is currently in runtime-cache.
 
 Return
@@ -1132,11 +1330,16 @@ Descrip.:\t A list of project signature."
   (let ((signatures (hash-table-keys projectIDE-runtime-cache))
         signatures-1)
     (dolist (signature signatures)
+      ;; prevent return association cache 
       (when (projectIDE-cache-p (gethash signature projectIDE-runtime-cache))
         (setq signatures-1 (nconc signatures-1 (list signature)))))
     signatures-1))
 
+
+
+
 (defun projectIDE-get-cache (signature)
+  
   "Get a projectIDE-cache object of give SIGNATURE in projectIDE-runtime-cache.
 It can also use to test whether project is in projectIDE-runtime-cache.
 
@@ -1150,7 +1353,10 @@ Descrip.:\t A project based unique ID."
 
   (gethash signature projectIDE-runtime-cache))
 
+
+
 (defun projectIDE-get-config-update-time (signature)
+  
   "Get the project config file update time in cache by given SIGNATURE.
 Return nil if \".projectIDE\" no longer exists at path.
 
@@ -1161,9 +1367,13 @@ Descrip.:\t\t Time of last update time of config file in projectIDE-runtime-cach
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
+  
   (projectIDE-cache-config-update-time (gethash signature projectIDE-runtime-cache)))
 
+
+
 (defun projectIDE-get-project-exclude (signature)
+  
   "Get the list of exclude from project object with given SIGNATURE in cache.
 
 Return
@@ -1178,7 +1388,11 @@ Descrip.:\t A project based unique ID."
    (projectIDE-cache-project
     (gethash signature projectIDE-runtime-cache))))
 
+
+
+
 (defun projectIDE-get-project-whitelist (signature)
+  
   "Get the list of allowed from project object with given SIGNATURE in cache.
 
 Return
@@ -1193,7 +1407,10 @@ Descrip.:\t A project based unique ID."
    (projectIDE-cache-project
     (gethash signature projectIDE-runtime-cache))))
 
+
+
 (defun projectIDE-get-cache-exclude (signature)
+  
   "Get the list of exclude form cache with given SIGNATURE.
 
 Return
@@ -1206,7 +1423,10 @@ Descrip.:\t A project based unique ID."
   
   (projectIDE-cache-exclude (gethash signature projectIDE-runtime-cache)))
 
+
+
 (defun projectIDE-get-cache-whitelist (signature)
+  
   "Get the list of allowed form cache with given SIGNATURE.
 
 Return
@@ -1219,7 +1439,10 @@ Descrip.:\t A project based unique ID."
   
   (projectIDE-cache-whitelist (gethash signature projectIDE-runtime-cache)))
 
+
+
 (defun projectIDE-get-cachemode (signature)
+  
   "Get the cache mode of project given by SIGNATURE.
 
 Return
@@ -1232,11 +1455,14 @@ Descrip.:\t A project based unique ID."
 
   (projectIDE-project-cachemode (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))
 
+
+
 (defun projectIDE-get-file-cache-state (signature)
+  
   "Get the file cache state of project given by SIGNATURE.
 
 Return
-Type:\t\t int
+Type:\t\t integer
 Descrip.:\t netgative if the file cache has not been updated yet.
 \t\t\t 0 is an uncertain state that it may or may not be
 \t\t\t   completed updating.
@@ -1249,7 +1475,10 @@ Descrip.:\t A project based unique ID."
   
    (projectIDE-cache-file-cache-state (gethash signature projectIDE-runtime-cache)))
 
+
+
 (defun projectIDE-background-update-cache? (signature)
+  
   "Return t if project of given SIGNATURE should update cache in background.
 
 Return
@@ -1266,7 +1495,10 @@ Descrip.:\t A project based unique ID."
        (projectIDE-project-cachemode
         (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
+
+
 (defun projectIDE-open-project-update-cache? (signature)
+  
   "Return t if project of given SIGNATURE
 should update cache when it first opens.
 
@@ -1284,7 +1516,10 @@ Descrip.:\t A project based unique ID."
        (projectIDE-project-cachemode
         (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
+
+
 (defun projectIDE-important-cmd-update-cache? (signature)
+  
   "Return t if project of given SIGNATURE
 should update cache before important command.
 
@@ -1303,7 +1538,10 @@ Descrip.:\t A project based unique ID."
        (projectIDE-project-cachemode
         (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
+
+
 (defun projectIDE-pre-prompt-update-cache? (signature)
+  
   "Return t if project of given SIGNATURE
 should update cache before prompting for file list.
 
@@ -1322,7 +1560,10 @@ Descrip.:\t A project based unique ID."
        (projectIDE-project-cachemode
         (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
+
+
 (defun projectIDE-generate-association? (signature)
+  
   "Return t if project of given SIGNATURE should generate file association list.
 
 Return
@@ -1339,7 +1580,10 @@ Descrip.:\t A project based unique ID."
        (projectIDE-project-cachemode
        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
 
+
+
 (defun projectIDE-get-file-cache (signature)
+  
   "Get the file cache hash table from cache with given SIGNATURE.
 
 Return
@@ -1352,7 +1596,10 @@ Descrip.:\t A project based unique ID."
   
   (projectIDE-cache-file-cache (gethash signature projectIDE-runtime-cache)))
 
+
+
 (defun projectIDE-get-opened-buffer (signature)
+  
   "Get the opened buffer from cache with given SIGNATURE.
 
 Return
@@ -1365,7 +1612,10 @@ Descrip.:\t A project based unique ID."
 
   (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)))
 
+
+
 (defun projectIDE-get-file-association (&optional buffer)
+  
   "Get the file association of BUFFER in project.
 Associated files mean file with same file name but different extension.
 If buffer is not provided, current buffer is used instead.
@@ -1392,7 +1642,10 @@ Descrip.:\t If buffer is not provided, current buffer is used."
         (projectIDE-assocache-filelist association)
       nil)))
 
+
+
 (defun projectIDE-get-file-association-state (&optional buffer)
+  
   "Return t if the file association state of given BUFFER is valid.
 Otherwise, nil.
 If BUFFER is not provided, current buffer is used.
@@ -1435,15 +1688,39 @@ Descrip.:\t A project based unique ID."
       nil)))
 
 
-(defun projectIDE-get-module-var (signature module var-name)
+
+(defun projectIDE-get-module-var (signature module var)
+  
+  "Get the value of VAR of MODULE from project specified by SIGNATURE.
+The return result should be a list of string if VAR exists.
+It will be nil if VAR does not exist.
+
+
+Return
+Type:\t\t list of string or nil
+Descrip.:\t List of string if VAR exists, otherwise nil.
+
+MODULDE
+Type:\t\t symbol
+Descrip.:\t The name of the module.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t The variable name.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+  
   (let* ((cache (gethash signature projectIDE-runtime-cache))
          (project (and cache (projectIDE-cache-project cache)))
          (values (and project (projectIDE-project-module-var project))))
-    (lax-plist-get values (concat (symbol-name module) "-" (symbol-name var-name)))))
+    (lax-plist-get values (concat (symbol-name module) "-" (symbol-name var)))))
 
 
 
 (defun projectIDE-push-cache (signature cache)
+  
   "Push CACHE of project given by SIGNATURE in projectIDE-runtime-cache.
 Make an file association cache as well if it is not disabled.
 
@@ -1463,7 +1740,10 @@ Descrip.:\t The cache object to be put in projectIDE-runtime-cache."
               (projectIDE-cache-project cache))))
     (puthash (concat signature "association") (make-hash-table :size 30 :test 'equal) projectIDE-runtime-cache)))
 
+
+
 (defun projectIDE-pop-cache (signature)
+  
   "Remove cache of project given by SIGNATURE in projectIDE-runtime-cache.
 
 SIGNATURE
@@ -1472,7 +1752,10 @@ Descrip.:\t A project based unique ID."
 
   (remhash signature projectIDE-runtime-cache))
 
+
+
 (defun projectIDE-set-cache-project (signature project)
+  
 "Set the PROJECT object in projectIDE-runtime-cache with given SIGNATURE.
 Update the config update time as well.
 
@@ -1488,7 +1771,10 @@ Descrip.:\t A project based unique ID."
         (setf (projectIDE-cache-project cache) project)
         (setf (projectIDE-cache-config-update-time cache) (current-time))))
 
+
+
 (defun projectIDE-set-cache-filter (signature)
+  
   "Set the exclude and whitelist of project cache given by SIGNATURE.
 The exculde and whitelist obtain from the project object in cache.
 
@@ -1502,7 +1788,10 @@ Descrip.:\t A project based unique ID."
     (setf (projectIDE-cache-exclude cache) exclude)
     (setf (projectIDE-cache-whitelist cache) whitelist)))
 
+
+
 (defun projectIDE-set-file-cache-state (signature state)
+  
   "Set the the file cache state of project of given SIGNATURE to STATE.
 STATE is the state of file caching, see `projectIDE-get-file-cache-state'.
 
@@ -1512,13 +1801,15 @@ Type:\t\t string
 Descrip.:\t A project based unique ID.
 
 STATE
-Type:\t\t int
+Type:\t\t integer
 Descri.:\t The file caching state."
   
   (setf (projectIDE-cache-file-cache-state (gethash signature projectIDE-runtime-cache)) state))
 
 
+
 (defun projectIDE-set-file-cache (signature)
+  
   "Set a new file cache hash table for project given by SIGNATURE.
 It can also use to reset the file cache.
 
@@ -1533,7 +1824,10 @@ Descrip.:\t A project based unique ID."
                     (projectIDE-manipulate-filter path (projectIDE-cache-exclude cache))
                     (projectIDE-manipulate-filter path (projectIDE-cache-whitelist cache))))))
 
+
+
 (defun projectIDE-add-opened-buffer (signature file)
+  
   "Add FILE to opened buffer of project cache given by SIGNATURE.
 
 SIGNATURE
@@ -1547,7 +1841,10 @@ Descrip.:\t File path."
   (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))
         (projectIDE-add-to-list (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) file)))
 
+
+
 (defun projectIDE-remove-opened-buffer (signature file)
+  
   "Remove FILE from opened buffer of project cache given by SIGNATURE.
 
 SIGNATURE
@@ -1557,10 +1854,14 @@ Descrip.:\t A project based unique ID.
 FILE
 Type:\t\t string
 Descrip.:\t File path."
+  
   (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))
         (cl-remove file (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) :test 'equal)))
 
+
+
 (defun projectIDE-clear-opened-buffer (signature)
+  
   "Remove all files from opened buffer of project cache given by SIGNATURE.
 
 SIGNATURE
@@ -1569,7 +1870,10 @@ Descrip.:\t A project based unique ID."
   
   (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) nil))
 
+
+
 (defun projectIDE-set-file-association (filelist &optional buffer)
+  
 "Set the file association of BUFFER of project to FILELIST.
 If BUFFER is not provided, current buffer is used instead.
 
@@ -1585,14 +1889,18 @@ Descrip.:\t If buffer is not provided, current buffer is used."
 (let* ((signature (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace))
        (filename (file-name-sans-extension (file-name-nondirectory (buffer-file-name buffer))))
        (table (gethash (concat signature "association") projectIDE-runtime-cache)))
-  
+
+  ;; Prevent multi extension suffix, eg. "foo.h.in"
   (while (not (equal filename (file-name-sans-extension filename)))
     (setq filename (file-name-sans-extension filename) ))
   
     (when table
       (puthash filename (make-projectIDE-assocache :state t :filelist filelist) table))))
 
+
+
 (defun projectIDE-flag-association-expired (signature)
+  
   "Flag the file association list of project given by SIGNATURE expired.
 
 SIGNATURE
@@ -1631,10 +1939,12 @@ Descrip.:\t A project based unique ID."
 ;; projectIDE buffer tracer
 ;;; Getter and setter function
 ;;fff (defun projectIDE-get-Btrace-signature ())
+;;fff (defun projectIDE-get-buffer-list (&optional signature))
 ;;fff (defun projectIDE-push-Btrace (signature &optional buffer))
 ;;fff (defun projectIDE-pop-Btrace ())
 
 (defun projectIDE-get-Btrace-signature (&optional buffer)
+  
   "Return the project signature of given BUFFER.
 If BUFFER is not a member of a project, returns nil.
 If BUFFER is not provided, current buffer is used.
@@ -1650,7 +1960,10 @@ Descrip.:\t If buffer is not provided, current buffer is used."
   
   (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace))
 
+
+
 (defun projectIDE-get-buffer-list (&optional signature)
+  
   "Return all opened buffer objects from project given by SIGNATURE.
 If signature is not provided, return opened buffers from all project.
 
@@ -1673,7 +1986,9 @@ Descrip.:\t A project based unique ID.
     (hash-table-keys projectIDE-runtime-Btrace)))
 
 
+
 (defun projectIDE-push-Btrace (signature &optional buffer)
+  
   "Put BUFFER to Btrace.
 It indicates buffer is a member of project given by SIGNATURE.
 If BUFFER is not provided, current buffer is used.
@@ -1688,7 +2003,10 @@ Descrip.:\t If buffer is not provided, current buffer is used."
 
   (puthash (or buffer (current-buffer)) signature projectIDE-runtime-Btrace))
 
+
+
 (defun projectIDE-pop-Btrace (&optional buffer)
+  
   "Remove BUFFER from projectIDE-runtime-Btrace.
 If BUFFER is not provided, current buffer is used.
 
@@ -1697,8 +2015,23 @@ Type:\t\t Emacs buffer
 Descrip.:\t If buffer is not provided, current buffer is used."
 
   (remhash (or buffer (current-buffer)) projectIDE-runtime-Btrace))
+
 ;; projectIDE buffer trace ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1709,17 +2042,39 @@ Descrip.:\t If buffer is not provided, current buffer is used."
 ;; projectIDE module
 
 (defvar projectIDE-runtime-packages nil
-  "Store and manage modules.")
+  "Store and manage modules.
+Never attempt to modify it directly.")
 
 (defvar projectIDE-runtime-functions nil
-  "Store and manage project specific functions.")
+  "Store and manage project specific functions.
+Never attempt to modify it directly.")
 
 (defvar projectIDE-key-table nil
-  "Store keymap for modules.")
+  "Store keymap for modules.
+Never attempt to modify it directly.")
+
+(defvar projectIDE-current-loading-module nil
+  "Store the current loading module.
+It will be non-nil only while loading a module.
+Never attempt to modify it directly.")
+
+(defvar projectIDE-active-modules nil
+  "Store the current active modules.
+Never attempt to modify it directly.")
+
+(defvar projectIDE-renew-modules-timer nil
+  "Store the timer for renewing modules.
+It should be always nil when checking for it.
+Because it store a idle timer with 0 second.
+Never attempt to modify it directly.")
+
+
 
 (cl-defstruct projectIDE-package
   name
   functions
+  signatures
+  closetime
   )
 
 (cl-defstruct projectIDE-function
@@ -1731,15 +2086,20 @@ Descrip.:\t If buffer is not provided, current buffer is used."
   key
   )
 
-(defvar projectIDE-current-loading-module nil
-  "Store the current loading module.
-It will be non-nil only while loading a module.")
-
-(defvar projectIDE-active-module-signature nil
-  "Store the module signature that is current in use.")
 
 
+(defun projectIDE-get-function-key (function)
+  (plist-get projectIDE-key-table function))
 
+
+(defun projectIDE-add-module-signature (module signature)
+
+  (let ((module (plist-get projectIDE-runtime-packages module)))
+    (if module
+        (progn
+          (cl-pushnew signature (projectIDE-package-signatures module) :test 'equal)
+          t)
+      nil)))
 
 (defun projectIDE-register (package function)
   
@@ -1747,8 +2107,7 @@ It will be non-nil only while loading a module.")
   
   (let ((pack (plist-get projectIDE-runtime-packages package)))
     (if pack
-        (setf (projectIDE-package-functions pack)
-              (projectIDE-add-to-list (projectIDE-package-functions pack) function))
+        (cl-pushnew function (projectIDE-package-functions pack))
       (setq projectIDE-runtime-packages (plist-put
                                          projectIDE-runtime-packages
                                          package
@@ -1893,52 +2252,6 @@ Descrip.:\t\t Name of function."
 
 ;; projectIDE module endls
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-(defun projectIDE-other-window ()
-  (let ((windows (window-list)))
-    (unless (>= (length windows) projectIDE-max-window-number)
-      (let ((hor 0)
-            (ver 0)
-            test)
-        (while (window-in-direction 'left test)
-          (setq test (window-in-direction 'left test)))
-        (while (window-in-direction 'right test)
-          (setq test (window-in-direction 'right test))
-          (setq hor (1+ hor)))
-        (setq test nil)
-        (while (window-in-direction 'above test)
-          (setq test (window-in-direction 'above test)))
-        (while (window-in-direction 'below test)
-          (setq test (window-in-direction 'below test))
-          (setq ver (1+ ver)))
-        (cond
-         ((> hor ver)
-          (split-window nil nil 'below))
-         ((< hor ver)
-          (split-window nil nil 'right))
-         ((= hor ver)
-          (split-window nil nil projectIDE-other-window-direction)))))
-    (other-window 1)))
-
 
 (provide 'projectIDE-header)
 ;;; projectIDE-header.el ends here

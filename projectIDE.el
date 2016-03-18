@@ -854,7 +854,8 @@ Descrip.:\t Function list calling this function for debug purpose."
                                    (format "Project config file for project %s not found." signature)
                                    nil
                                    (projectIDE-caller 'projectIDE-update-cache-backend caller))
-        (throw 'Error nil)))
+        (throw 'Error nil))
+      (projectIDE-load-all-modules signature))
     
     (when (projectIDE-filter-changed? signature (projectIDE-caller 'projectIDE-update-cache-backend caller))
       (projectIDE-set-cache-filter signature)
@@ -884,7 +885,8 @@ Descrip.:\t Function list calling this function for debug purpose."
           (throw 'quit nil))
 
         (when (projectIDE-config-need-update? signature (projectIDE-caller 'projectIDE-background-update-cache))
-          (projectIDE-update-project-config signature nil (projectIDE-caller 'projectIDE-background-update-cache)))
+          (projectIDE-update-project-config signature nil (projectIDE-caller 'projectIDE-background-update-cache))
+          (projectIDE-load-all-modules signature))
 
         (setq state (projectIDE-get-file-cache-state signature))
       
@@ -984,7 +986,9 @@ Descrip.:\t Function list calling this function for debug purpose."
     
     (if (projectIDE-open-project-update-cache? signature)
         (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-track-buffer caller))
-      (projectIDE-set-file-cache-state signature 0)))
+      (projectIDE-set-file-cache-state signature 0))
+
+    (projectIDE-load-all-modules signature))
   
   (projectIDE-add-opened-buffer signature (buffer-file-name buffer))
   (projectIDE-set-project-last-open signature))
@@ -1741,7 +1745,7 @@ association at other window."
                
                (copy-directory ,templateDir projectRoot nil nil t)
                (projectIDE-new-project projectRoot (projectIDE-caller 'projectIDE-create))
-               (run-hooks 'projectIDE-global-project-create-hook)
+               (run-hooks 'projectIDE-project-create-hook)
 
                (projectIDE-message-handle 'Info
                                           (format "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
@@ -1865,6 +1869,7 @@ association at other window."
 
 
 (defun projectIDE-initialize-maybe ()
+  
   "Try to initialize projectIDE if it has not been initialized.
 Return t if projectIDE has been initialized.
 Return

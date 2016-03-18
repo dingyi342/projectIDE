@@ -33,6 +33,43 @@
 (require 'projectIDE-header)
 (require 'projectIDE-debug)
 
+(defun projectIDE-advice-buffer-change (&rest args)
+  
+"Designed to be adviced after `switch-to-buffer'
+add to`kill-buffer-hook'."
+
+(when projectIDE-renew-modules-timer
+    (cancel-timer projectIDE-renew-modules-timer))
+  (setq projectIDE-renew-modules-timer
+        (run-with-idle-timer 0 nil 'projectIDE-module-controller)))
+
+
+
+(defun projectIDE-module-controller ()
+  
+  "Control module activation and deactivation.
+It is designed to work with `kill-buffer-hook' and
+`switch-to-buffer'.
+
+However, do not advice/hook this funcion directly.
+Because it uses `curret-buffer' to resolve the
+current module which may be invalid during the process.
+
+Instead, it should run with idle timer.
+See `projectIDE-advice-buffer-change' for details."
+
+  ;; don't run on temp buffer
+  (unless (string-match "\\*.*\\*" (buffer-name (current-buffer)))
+    (let ((diff (projectIDE-module-diff (projectIDE-get-Btrace-signature))))
+      (setq projectIDE-active-project (projectIDE-get-Btrace-signature))
+      (dolist (plus (car diff))
+        (projectIDE-activate-module plus))
+      (dolist (minus (cdr diff))
+        (projectIDE-deactivate-module minus))))
+  (setq projectIDE-renew-modules-timer nil))
+
+
+
 (defun projectIDE-load-module (name)
   
   "Attempt to load module given by NAME.
@@ -46,7 +83,7 @@ Descrip.:\t Symbol of the module name."
   (require name nil t)
   (let ((initializer (intern (concat (symbol-name name) "-initialize"))))
     (when (projectIDE-get-function-object initializer)
-      (projectIDE-realize initializer)
+      (projectIDE-realize-function initializer)
       (apply initializer)))
   (setq projectIDE-current-loading-module nil))
 
@@ -64,7 +101,7 @@ Descrip.:\t Symbol of the module name."
   ;; Run the module terminate function
   (let ((terminator (intern (concat (symbol-name name) "-terminate"))))
     (when (projectIDE-get-function-object terminator)
-      (projectIDE-realize terminator)
+      (projectIDE-realize-function terminator)
       (apply terminator)))
 
   ;; Unbind all functions in module
@@ -92,7 +129,9 @@ Descrip.:\t Symbol of the module name."
 
    (let ((functions (projectIDE-get-all-functions-from-module module)))
     (dolist (function functions)
-      (projectIDE-realize-function function))))
+      (projectIDE-realize-function function)
+      (projectIDE-realize-key function)))
+   (cl-pushnew module projectIDE-active-modules))
 
 
 
@@ -105,8 +144,10 @@ Type:\t\t symbol
 Descrip.:\t Symbol of the module name."
 
    (let ((functions (projectIDE-get-all-functions-from-module module)))
-    (dolist (function functions)
-      (fmakunbound function))))
+     (dolist (function functions)
+       (projectIDE-unrealize-key function)
+      (fmakunbound function)))
+   (setq projectIDE-active-modules (cl-remove module projectIDE-active-modules)))
 
 
 (defun projectIDE-load-all-modules (signature)
@@ -118,38 +159,41 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (dolist (module (projectIDE-get-modules signature))
-    (projectIDE-load-module name)))
+    (projectIDE-load-module module)))
 
 
 
-(defun projectIDE-module-diff (signature-old signature-new)
+(defun projectIDE-module-diff (signature)
   
-  "Returns a list of module difference of two projects
-specified by SIGNATURE-OLD and SIGNATURE-NEW.
+  "Returns a list of module difference from
+`projectIDE-active-modules' to module used by project
+specified by SIGNATURE.
+
 The car of the returned list is the new modules needed to be added.
 The cdr of the returned list is the modules neeeded to be diminished.
-SIGNATURE-OLD or SIGNATURE-NEW can be nil.
+SIGNATURE can be nil, meaning that no modules to compare to,
+resulting a return list emphasize only on diminishing modules.
 
 Return
 Type:\t\t list of two list
 Descrip.:\t The car of the list is the modules needed to be added.
 \t\t\t The cdr of the returned list is the modules neeeded to be diminished.
 
-SIGNAUTRE-OLD or SIGNATURE-NEW
+SIGNAUTRE
 Type:\t\t string
 Descrip.:\t Signature of project."
   
-  (let ((modules-old (projectIDE-get-modules signature-old))
-        (modules-new (projectIDE-get-modules signature-new))
+  (let ((modules (projectIDE-get-modules signature))
         plus
         minus)
-    (dolist (module modules-new)
-      (unless (memq module modules-old)
+    (dolist (module modules)
+      (unless (memq module projectIDE-active-modules)
         (push module plus)))
-    (dolist (module modules-old)
-      (unless (memq module modules-new)
+    (dolist (module projectIDE-active-modules)
+      (unless (memq module modules)
         (push module minus)))
     (cons plus minus)))
+
 
 
 
@@ -169,7 +213,7 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
       (projectIDE-realize-defmacro name))
      ((eq type 'cl-defmacro)
       (projectIDE-realize-cl-defmacro name))
-     ((t nil)))))
+     (t nil))))
 
 (defun projectIDE-realize-defun (name)
   "Produce real function for `defun' type with NAME."
@@ -212,6 +256,18 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
          (docstring (projectIDE-function-docstring function))
          (body (car (projectIDE-function-body function))))
     (eval `(cl-defmacro ,name ,arglist ,docstring ,body))))
+
+(defun projectIDE-realize-key (function)
+  "Produce real key bind for FUNCTION if it exists."
+  (let ((key (projectIDE-get-function-key function)))
+    (when key
+      (define-key projectIDE-keymap key function))))
+
+(defun projectIDE-unrealize-key (function)
+  "Deactive key bind for FUNCTION if it exists."
+  (let ((key (projectIDE-get-function-key function)))
+    (when key
+      (define-key projectIDE-keymap key nil))))
     
 
 (provide 'projectIDE-module)
