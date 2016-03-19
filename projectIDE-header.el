@@ -75,18 +75,17 @@ Descrip.:\t A single string of combined regexp.
 LIST
 Type:\t\t string list
 Descrip.:\t A string list of regexp."
-  
-  (let (regexp)
-    (dolist (val (reverse list) regexp)
-      (setq regexp
-            (concat val (and regexp (concat "\\|" regexp)))))))
+
+  (mapconcat (lambda (elt) (concat "\\(" elt "\\)"))
+             list
+             "\\|"))
 
 
 
 (defun projectIDE-trim-string (string)
   
   "Return trimmed leading and tailing whitespace from STRING.
-If the return string is a null string, return nil instead.
+If the return string is a empty string, return nil instead.
 
 Return
 Type:\t\t string or nil
@@ -96,10 +95,9 @@ STRING
 Type:\t\t string
 Descrip.:\t String to be trimmed."
   
-  (let ((return-string (string-trim string)))
-    (if (string= return-string "")
-        nil
-      return-string)))
+  (if (string= (setq string (string-trim string)) "")
+      nil
+    string))
 
 
 
@@ -160,9 +158,7 @@ LIST1/LIST2
 Type:\t list of any type
 Descrip.:\t List to be combined."
   
-  (let (newlist)
-    (setq newlist (append list1 list2))
-    (cl-remove-duplicates newlist :test (or test 'equal))))
+  (cl-remove-duplicates (append list1 list2) :test (or test 'equal)))
 
 
 
@@ -189,19 +185,23 @@ Descip.:\t A string list which each entry is to be prefixed."
 
   (let (return)
     (dolist (entry list)
-      (setq return (projectIDE-add-to-list return
-                                           (concat projectRoot
-                                                   (replace-regexp-in-string "\\*" ".*"
-                                                                             (replace-regexp-in-string "\\." "\\\\." entry))
-                                                   "\\'"))))
+      (cl-pushnew (concat projectRoot
+                          (replace-regexp-in-string "\\*" ".*"
+                                                    (replace-regexp-in-string "\\." "\\\\." entry))
+                          "\\'")
+                  return
+                  :test 'equal))
     (projectIDE-concat-regexp return)))
 
 
 
-(defun projectIDE-prompt (prompt choices &optional initial-input)
+(defun projectIDE-prompt (prompt choices
+                                 &optional predicate require-match initial-input hist def inherit-input-method)
   
   "Create a PROMPT to choose from CHOICES which is a list.
 Return the selected result.
+
+All optional arguments is the same as `completing-read'.
 
 Return
 Type:\t\t type of the CHOICES list
@@ -215,50 +215,58 @@ CHOICES
 Type:\t\t list of any type
 Descrip.: A list of choices to let user choose.
 
-INITIAL-INPUT
-Type:\t\t string
-Descrip.:\t Initial input for the prompt."
+"
+
+  (if (fboundp projectIDE-prompt-function)
+      (funcall projectIDE-prompt-function prompt choices
+               predicate require-match initial-input hist def inherit-input-method)
+    (completing-read prompt choices predicate require-match initial-input hist def inherit-input-method)))
+
+
+
+(defun projectIDE-read-file-name (prompt &optional dir default-filename mustmatch initial predicate)
   
-  (cond
-     ;; ido
-     ((eq projectIDE-completion-system 'ido)
-      (ido-completing-read prompt choices nil nil initial-input))
-     ;; helm
-     ((eq projectIDE-completion-system 'helm)
-      (if (fboundp 'helm-comp-read)
-          (helm-comp-read prompt choices
-                          :initial-input initial-input
-                          :candidates-in-buffer t
-                          :must-match 'confirm)
-        (projectIDE-message-handle 'Warning
-                                   "Problem implementing helm completion. Please check `projectIDE-completion-system'.
-                                    projectIDE will use default completion instead."
-                                   t
-                                   (projectIDE-caller 'projectIDE-prompt))
-        (completing-read prompt choices nil nil initial-input)))
-     ;; grizzl
-     ((eq projectIDE-completion-system 'grizzl)
-      (if (and (fboundp 'grizzl-completing-read)
-               (fboundp 'grizzl-make-index))
-          (grizzl-completing-read prompt (grizzl-make-index choices))
-        (projectIDE-message-handle 'Warning
-                                   "Problem implementing grizzl completion. Please check `projectIDE-completion-system'.
-                                    projectIDE will use default completion instead."
-                                   t
-                                   (projectIDE-caller 'projectIDE-prompt))
-        (completing-read prompt choices nil nil initial-input)))
-     ;; ivy
-     ((eq projectIDE-completion-system 'ivy)
-      (if (fboundp 'ivy-completing-read)
-          (ivy-completing-read prompt choices nil nil initial-input)
-        (projectIDE-message-handle 'Warning
-                                   "Problem implementing ivy completion. Please check `projectIDE-completion-system'.
-                                    projectIDE will use default completion instead."
-                                   t
-                                   (projectIDE-caller 'projectIDE-prompt))
-        (completing-read prompt choices nil nil initial-input)))
-     ;; default
-     (t (completing-read prompt choices nil nil initial-input))))
+  "Read file name, prompting with PROMPT.
+Return the expanded file name.
+
+All optional arguments is the same as `read-file-name'.
+
+Return
+Type:\t string
+Descrip.:\t An expanded file name."
+  
+    (if (fboundp projectIDE-read-file-name-function)
+        (expand-file-name
+         (funcall projectIDE-read-file-name-function prompt dir default-filename mustmatch initial predicate))
+      (expand-file-name (read-file-name prompt dir default-filename mustmatch initial predicate))))
+
+
+
+(defun projectIDE-read-directory-name (prompt &optional dir default-dirname mustmatch initial)
+  
+  "Read directory name, prompting with PROMPT.
+Return the expanded directory name.
+
+All optional arguments is the same as `read-directory-name'.
+
+Return
+Type:\t string
+Descrip.:\t An expanded directory name."
+  
+    (if (fboundp projectIDE-read-directory-name-function)
+        (expand-file-name
+         (funcall projectIDE-read-directory-name-function prompt dir default-dirname mustmatch initial))
+      (expand-file-name (read-directory-name prompt dir default-dirname mustmatch initial))))
+
+
+(defun projectIDE-dired (dirname &optional switches)
+
+  "Open dired with DIRNAME.
+See `dired' for details."
+
+  (if (fboundp projectIDE-dired-function)
+      (funcall projectIDE-dired-function dirname switches)
+    (dired dirname switches)))
 
 ;; General function ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -325,7 +333,7 @@ Turning on Text mode runs the normal hook `projectIDE-config-mode-hook'."
 
 
 
-(defun projectIDE-set-key (key command)
+(defun projectIDE-mod-key (key command)
   
   "Give KEY a project specific binding as COMMAND.
 COMMAND is the command definition to use; usually it is
@@ -340,6 +348,19 @@ its modules has been activated."
   (or (vectorp key) (stringp key)
       (signal 'wrong-type-argument (list 'arrayp key)))
   (setq projectIDE-key-table (plist-put projectIDE-key-table command key)))
+
+
+
+(defun projectIDE-set-key (key command)
+
+  "Give KEY a projectIDE mode binding as COMMAND.
+COMMAND is the command definition to use; usually it is
+a symbol naming an interactively-callable function.
+KEY is a key sequence; noninteractively, it is a string or vector
+of characters or event types, and non-ASCII characters with codes
+above 127 (such as ISO Latin-1) can be included if you use a vector."
+
+  (define-key projectIDE-keymap key command))
 
 ;;; projectIDE modes ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -484,19 +505,27 @@ its modules has been activated."
   :group 'projectIDE-global
   :group 'projectIDE-hook)
 
-(defcustom projectIDE-completion-system
-  (or (and (fboundp 'helm) 'helm)
-      (and (fboundp 'ivy-completing-read) 'ivy)
-      (and (fboundp 'ido-completing-read) 'ido)
-      (and (fboundp 'grizzl-completing-read) 'grizzl)
-      'default)
-  "The completion system to be used by projectIDE."
-  :type '(radio
-          (const :tag "Ido" ido)
-          (const :tag "Ivy" ivy)
-          (const :tag "Grizzl" grizzl)
-          (const :tag "Helm" helm)
-          (const :tag "Default" default))
+(defcustom projectIDE-prompt-function nil
+  "The completion system to be used by projectIDE for prompting.
+The prompt function must accept this arguments:
+\"prompt choices predicate require-match initial-input hist def inherit-input-method\"
+See `completing-read' for details."
+  :type 'function
+  :group 'projectIDE-global)
+
+(defcustom projectIDE-read-file-name-function nil
+  "The completion system to be used by projectIDE for reading file name."
+  :type 'function
+  :group 'projectIDE-global)
+
+(defcustom projectIDE-read-directory-name-function nil
+  "The completion system to be used by projectIDE for reading dir name."
+  :type 'function
+  :group 'projectIDE-global)
+
+(defcustom projectIDE-dired-function nil
+  "The dired function to be used by projectIDE for opening dired."
+  :type 'function
   :group 'projectIDE-global)
 
 (defcustom projectIDE-enable-background-service t
@@ -785,11 +814,12 @@ Can only be \"above\" or \"below\""
 
 (defun projectIDE-other-window ()
   
-  "Split or switch to other window in a smarter way."
+  "Split or switch to other window in a better way."
   
   (interactive)
   (let ((hor 1)
         (ver 1)
+        (priority (car projectIDE-other-window-priority))
         test)
     
     (while (window-in-direction 'left test)
@@ -807,15 +837,20 @@ Can only be \"above\" or \"below\""
     (unless (and (>= hor projectIDE-max-horizontal-window)
                  (>= ver projectIDE-max-vertical-window))
       (cond
+       ((>= ver projectIDE-max-vertical-window)
+        (split-window nil nil (car projectIDE-other-window-horizontal-priority)))
+       ((>= hor projectIDE-max-horizontal-window)
+        (split-window nil nil (car projectIDE-other-window-vertical-priority)))
+
+       ((and (eq priority 'vertical) (= hor ver))
+        (split-window nil nil (car projectIDE-other-window-vertical-priority)))
+       ((and (not (eq priority 'vertical)) (= hor ver))
+        (split-window nil nil (car projectIDE-other-window-horizontal-priority)))
+       
        ((> hor ver)
         (split-window nil nil (car projectIDE-other-window-vertical-priority)))
        ((< hor ver)
-        (split-window nil nil (car projectIDE-other-window-horizontal-priority)))
-       ((= hor ver)
-        (split-window nil nil
-                      (if (eq (car projectIDE-other-window-priority) 'vertical)
-                          (car projectIDE-other-window-vertical-priority)
-                        (car projectIDE-other-window-horizontal-priority))))))
+        (split-window nil nil (car projectIDE-other-window-horizontal-priority)))))
     
     (other-window 1)))
 
@@ -1072,13 +1107,13 @@ PATH
 Type:\t\t string
 Descript.:\t File or folder path in string."
   
-  (let ((records (projectIDE-get-all-records))
+  (let ((records (hash-table-values projectIDE-runtime-record))
         candidates
         signature)
 
     ;; Search all recods matched path
     (dolist (record records)
-      (when (string-prefix-p (projectIDE-record-path record) path)
+      (when (and (projectIDE-record-p record)(string-prefix-p (projectIDE-record-path record) path))
         (cl-pushnew 'candidates (projectIDE-record-signature record) :test 'equal)))
 
     (setq signature (car candidates))
@@ -1086,27 +1121,28 @@ Descript.:\t File or folder path in string."
     ;; Use the best match result
     (unless (<= (length candidates) 1)
       (dolist (candidate candidates)
-        (when (> (length (projectIDE-get-project-path candidate))
-                 (length (projectIDE-get-project-path signature)))
+        (when (> (length (projectIDE-record-path (gethash candidate projectIDE-runtime-record)))
+                 (length (projectIDE-record-path (gethash signature projectIDE-runtime-record))))
           (setq signature candidate))))
-    
     signature))
 
 
 
 (defun projectIDE-get-project-name (signature)
   
-"Get the project name of given SIGNATURE.
+  "Get the project name of given SIGNATURE.
 
 Return
-Type:\t\t string
+Type:\t\t string or nil
 Descrip.:\t\t Name of project of the given signature.
+\t\t\t Return nil if there is problem getting project name.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (projectIDE-record-name (gethash signature projectIDE-runtime-record)))
+  (ignore-errors
+    (projectIDE-record-name (gethash signature projectIDE-runtime-record))))
 
 
 
@@ -1123,7 +1159,8 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (let ((path (projectIDE-record-path (gethash signature projectIDE-runtime-record))))
+  (let ((path (ignore-errors
+                  (projectIDE-record-path (gethash signature projectIDE-runtime-record)))))
     (if (file-readable-p (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER))
         path
       nil)))
@@ -1145,8 +1182,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (let ((path
-         (concat (projectIDE-record-path
-                  (gethash signature projectIDE-runtime-record))
+         (concat (ignore-errors
+                     (projectIDE-record-path
+                      (gethash signature projectIDE-runtime-record)))
                  PROJECTIDE-PROJECTROOT-IDENTIFIER)))
     (if (file-readable-p path)
         path
@@ -1161,12 +1199,14 @@ Descrip.:\t A project based unique ID."
 Return
 Type:\t\t Emacs time
 Descrip.:\t Date and time that the project created.
+\t\t\t Return nil if there is problem getting creation time.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (projectIDE-record-create-time (gethash signature projectIDE-runtime-record)))
+  (ignore-errors
+      (projectIDE-record-create-time (gethash signature projectIDE-runtime-record))))
 
 
 
@@ -1177,18 +1217,24 @@ Descrip.:\t A project based unique ID."
 Return
 Type:\t\t Emacs time
 Descrip.:\t Date and time that the project modified.
+\t\t\t Return nil if it has not been opened
+\t\t\t or having problem reading the last opened time.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (projectIDE-record-last-open (gethash signature projectIDE-runtime-record)))
+  (ignore-errors
+      (projectIDE-record-last-open (gethash signature projectIDE-runtime-record))))
 
 
 
 (defun projectIDE-set-project-name (signature name)
   
   "Set the project NAME of given SIGNATURE in projectIDE-runtime-record.
+
+Return
+Descrip.:\t nil if there is problem setting the name.
 
 NAME
 Type:\t\t string
@@ -1197,14 +1243,20 @@ Descrip.:\t project name
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
-  
-  (setf (projectIDE-record-name (gethash signature projectIDE-runtime-record)) name))
+
+  (let ((record (gethash signature projectIDE-runtime-record)))
+    (if (projectIDE-record-p record)
+        (setf (projectIDE-record-name record) name)
+      nil)))
 
 
 
 (defun projectIDE-set-project-path (signature path)
   
   "Set the project PATH of given SIGNATURE in projectIDE-runtime-record.
+
+Return
+Descrip.:\t nil if there is problem setting the path.
 
 NAME
 Type:\t\t string
@@ -1214,8 +1266,10 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (setf (projectIDE-record-path (gethash signature projectIDE-runtime-record)) path))
-
+  (let ((record (gethash signature projectIDE-runtime-record)))
+    (if (projectIDE-record-p record)
+        (setf (projectIDE-record-path record) path)
+      nil)))
 
 
 
@@ -1223,11 +1277,17 @@ Descrip.:\t A project based unique ID."
   
   "Set the project last opened time given by SIGNATURE to current time.
 
+Return
+Descrip.:\t Return if having problem setting the last opened time.
+
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (setf (projectIDE-record-last-open (gethash signature projectIDE-runtime-record)) (current-time)))
+  (let ((record (gethash signature projectIDE-runtime-record)))
+    (if (projectIDE-record-p record)
+        (setf (projectIDE-record-last-open record) (current-time))
+      nil)))
 
 ;; record object ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1319,6 +1379,7 @@ Descrip.:\t A project based unique ID."
 ;;fff (defun projectIDE-set-file-association (signature filelist &optional buffer))
 ;;fff (defun projectIDE-flag-association-expired (signature))
 
+
 (defun projectIDE-get-all-caching-signature ()
   
   "Get a list of project signature which is currently in runtime-cache.
@@ -1350,8 +1411,9 @@ Descrip.:\t The cache object of given signature or nil if not found.
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
-
-  (gethash signature projectIDE-runtime-cache))
+  
+  (ignore-errors
+      (projectIDE-cache-p (gethash signature projectIDE-runtime-cache))))
 
 
 
@@ -1368,7 +1430,8 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (projectIDE-cache-config-update-time (gethash signature projectIDE-runtime-cache)))
+  (ignore-errors
+   (projectIDE-cache-config-update-time (gethash signature projectIDE-runtime-cache))))
 
 
 
@@ -1377,16 +1440,19 @@ Descrip.:\t A project based unique ID."
   "Get the list of exclude from project object with given SIGNATURE in cache.
 
 Return
-Type:\t\t list of string
-Descrip.:\t A list of exculding regexp
+Type:\t\t list of string or nil
+Descrip.:\t A list of exculding regexp.
+\t\t\t Return nil if there is no excluded items or
+\t\t\t there is problem reading the project exclude.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (projectIDE-project-exclude
-   (projectIDE-cache-project
-    (gethash signature projectIDE-runtime-cache))))
+  (ignore-errors
+    (projectIDE-project-exclude
+     (projectIDE-cache-project
+      (gethash signature projectIDE-runtime-cache)))))
 
 
 
@@ -1398,14 +1464,17 @@ Descrip.:\t A project based unique ID."
 Return
 Type:\t\t list of string
 Descrip.:\t A list of whitelist regexp
+\t\t\t Return nil if there is no excluded items or
+\t\t\t there is problem reading the project whitelist.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (projectIDE-project-whitelist
-   (projectIDE-cache-project
-    (gethash signature projectIDE-runtime-cache))))
+  (ignore-errors
+    (projectIDE-project-whitelist
+     (projectIDE-cache-project
+      (gethash signature projectIDE-runtime-cache)))))
 
 
 
@@ -1414,14 +1483,17 @@ Descrip.:\t A project based unique ID."
   "Get the list of exclude form cache with given SIGNATURE.
 
 Return
-Type:\t\t list of string
+Type:\t\t list of string or nil
 Descrip.:\t A list of exculding regexp
+\t\t\t Return nil if there is no excluded items or
+\t\t\t there is problem reading the cache exclude.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (projectIDE-cache-exclude (gethash signature projectIDE-runtime-cache)))
+  (ignore-errors
+      (projectIDE-cache-exclude (gethash signature projectIDE-runtime-cache))))
 
 
 
@@ -1430,14 +1502,17 @@ Descrip.:\t A project based unique ID."
   "Get the list of allowed form cache with given SIGNATURE.
 
 Return
-Type:\t\t list of string
+Type:\t\t list of string or nil
 Descrip.:\t A list of whitelist regexp
+\t\t\t Return nil if there is no excluded items or
+\t\t\t there is problem reading the cache whitelist.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (projectIDE-cache-whitelist (gethash signature projectIDE-runtime-cache)))
+  (ignore-errors
+      (projectIDE-cache-whitelist (gethash signature projectIDE-runtime-cache))))
 
 
 
@@ -1446,14 +1521,18 @@ Descrip.:\t A project based unique ID."
   "Get the cache mode of project given by SIGNATURE.
 
 Return
-Type:\t\t integer (bitwise)
+Type:\t\t integer (bitwise) or nil
 Descrip.:\t Bitwise operated cache mode.  See `projectIDE-default-cachemode'.
+\t\t\t Return nil if there is problem reading the cachemode.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (projectIDE-project-cachemode (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))
+  (ignore-errors
+      (projectIDE-project-cachemode
+       (projectIDE-cache-project
+        (gethash signature projectIDE-runtime-cache)))))
 
 
 
@@ -1462,18 +1541,21 @@ Descrip.:\t A project based unique ID."
   "Get the file cache state of project given by SIGNATURE.
 
 Return
-Type:\t\t integer
+Type:\t\t integer or nil
 Descrip.:\t netgative if the file cache has not been updated yet.
 \t\t\t 0 is an uncertain state that it may or may not be
 \t\t\t   completed updating.
 \t\t\t 1 is a state it repeating a completed state.
 \t\t\t 2 is a state that it generates buffer association.
+\t\t\t nil if there is problem reading the cache state.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-   (projectIDE-cache-file-cache-state (gethash signature projectIDE-runtime-cache)))
+  (ignore-errors
+      (projectIDE-cache-file-cache-state
+       (gethash signature projectIDE-runtime-cache))))
 
 
 
@@ -1492,8 +1574,9 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-background-update-cache
       (logand
        projectIDE-CACHEMODE-background-update-cache
-       (projectIDE-project-cachemode
-        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (ignore-errors
+         (projectIDE-project-cachemode
+          (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
 
 
@@ -1513,8 +1596,9 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-open-project-update-cache
       (logand
        projectIDE-CACHEMODE-open-project-update-cache
-       (projectIDE-project-cachemode
-        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (ignore-errors
+         (projectIDE-project-cachemode
+          (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
 
 
@@ -1535,8 +1619,9 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-update-cache-important-command
       (logand
        projectIDE-CACHEMODE-update-cache-important-command
-       (projectIDE-project-cachemode
-        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (ignore-errors
+         (projectIDE-project-cachemode
+          (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
 
 
@@ -1557,8 +1642,9 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-update-cache-pre-prompt
       (logand
        projectIDE-CACHEMODE-update-cache-pre-prompt
-       (projectIDE-project-cachemode
-        (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (ignore-errors
+         (projectIDE-project-cachemode
+          (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
 
 
@@ -1577,8 +1663,9 @@ Descrip.:\t A project based unique ID."
   (eq projectIDE-CACHEMODE-generate-association
       (logand
        projectIDE-CACHEMODE-generate-association
-       (projectIDE-project-cachemode
-       (projectIDE-cache-project (gethash signature projectIDE-runtime-cache))))))
+       (ignore-errors
+         (projectIDE-project-cachemode
+          (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
 
 
@@ -1587,14 +1674,16 @@ Descrip.:\t A project based unique ID."
   "Get the file cache hash table from cache with given SIGNATURE.
 
 Return
-Type:\t\t hashtbale
+Type:\t\t hashtbale or nil
 Descrip.:\t A hashtable of file cache maintained by fdex
+\t\t\t Return nil if there is problem reading the file cache.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (projectIDE-cache-file-cache (gethash signature projectIDE-runtime-cache)))
+  (ignore-errors
+    (projectIDE-cache-file-cache (gethash signature projectIDE-runtime-cache))))
 
 
 
@@ -1603,14 +1692,16 @@ Descrip.:\t A project based unique ID."
   "Get the opened buffer from cache with given SIGNATURE.
 
 Return
-Type:\t\t list of string
+Type:\t\t list of string or nil
 Descrip.:\t A list of opened buffer in terms of file path.
+\t\t\t Return nil if there is error reading the opened buffer.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)))
+  (ignore-errors
+    (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))))
 
 
 
@@ -1639,7 +1730,7 @@ Descrip.:\t If buffer is not provided, current buffer is used."
     (if (and signature
              (setq table (gethash (concat signature "association") projectIDE-runtime-cache))
              (setq association (gethash (file-name-sans-extension (file-name-nondirectory (buffer-file-name buffer))) table)))
-        (projectIDE-assocache-filelist association)
+        (ignore-errors (projectIDE-assocache-filelist association))
       nil)))
 
 
@@ -1665,7 +1756,7 @@ Descrip.:\t If buffer is not provided, current buffer is used."
              (setq table (gethash (concat signature "association") projectIDE-runtime-cache))
              (setq association
                    (gethash (file-name-sans-extension (file-name-nondirectory (buffer-file-name buffer))) table)))
-        (projectIDE-assocache-state association)
+        (ignore-errors (projectIDE-assocache-state association))
       nil)))
 
 
@@ -1681,17 +1772,15 @@ Descrip:\t List of modules
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
-
-  (let ((cache (gethash signature projectIDE-runtime-cache)))
-    (if cache
-        (projectIDE-project-module (projectIDE-cache-project cache))
-      nil)))
-
-
-
-(defun projectIDE-get-module-var (signature module var)
   
-  "Get the value of VAR of MODULE from project specified by SIGNATURE.
+  (ignore-errors
+    (projectIDE-project-module (gethash signature projectIDE-runtime-cache))))
+
+
+
+(defun projectIDE-get-module-var (signature var)
+  
+  "Get the module value of VAR from project specified by SIGNATURE.
 The return result should be a list of string if VAR exists.
 It will be nil if VAR does not exist.
 
@@ -1699,10 +1788,6 @@ It will be nil if VAR does not exist.
 Return
 Type:\t\t list of string or nil
 Descrip.:\t List of string if VAR exists, otherwise nil.
-
-MODULDE
-Type:\t\t symbol
-Descrip.:\t The name of the module.
 
 VAR
 Type:\t\t symbol
@@ -1713,9 +1798,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (let* ((cache (gethash signature projectIDE-runtime-cache))
-         (project (and cache (projectIDE-cache-project cache)))
-         (values (and project (projectIDE-project-module-var project))))
-    (lax-plist-get values (concat (symbol-name module) "-" (symbol-name var)))))
+         (project (and (projectIDE-cache-p cache) (projectIDE-cache-project cache)))
+         (values (and (projectIDE-project-p project) (projectIDE-project-module-var project))))
+    (plist-get values var)))
 
 
 
@@ -1733,12 +1818,14 @@ Type:\t\t projectIDE-cache object
 Descrip.:\t The cache object to be put in projectIDE-runtime-cache."
 
   (puthash signature cache projectIDE-runtime-cache)
-  (when (eq projectIDE-CACHEMODE-generate-association
-            (logand
-             projectIDE-CACHEMODE-generate-association
+  (puthash (concat signature "module") (make-hash-table :size 100) projectIDE-runtime-cache))
+(when (eq projectIDE-CACHEMODE-generate-association
+          (logand
+           projectIDE-CACHEMODE-generate-association
+           (ignore-errors
              (projectIDE-project-cachemode
-              (projectIDE-cache-project cache))))
-    (puthash (concat signature "association") (make-hash-table :size 30 :test 'equal) projectIDE-runtime-cache)))
+              (projectIDE-cache-project cache)))))
+  (puthash (concat signature "association") (make-hash-table :size 30 :test 'equal) projectIDE-runtime-cache))
 
 
 
@@ -1750,7 +1837,9 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (remhash signature projectIDE-runtime-cache))
+  (remhash signature projectIDE-runtime-cache)
+  (remhash (concat signature "association") projectIDE-runtime-cache)
+  (remhash (concat signature "module") projectIDE-runtime-cache))
 
 
 
@@ -1768,8 +1857,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
 
 (let ((cache (gethash signature projectIDE-runtime-cache)))
-        (setf (projectIDE-cache-project cache) project)
-        (setf (projectIDE-cache-config-update-time cache) (current-time))))
+  (when (projectIDE-cache-p cache)
+    (setf (projectIDE-cache-project cache) project)
+    (setf (projectIDE-cache-config-update-time cache) (current-time)))))
 
 
 
@@ -1783,10 +1873,11 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (let* ((cache (gethash signature projectIDE-runtime-cache))
-         (exclude (projectIDE-project-exclude (projectIDE-cache-project cache)))
-         (whitelist (projectIDE-project-whitelist (projectIDE-cache-project cache))))
-    (setf (projectIDE-cache-exclude cache) exclude)
-    (setf (projectIDE-cache-whitelist cache) whitelist)))
+         (exclude (ignore-errors (projectIDE-project-exclude (projectIDE-cache-project cache))))
+         (whitelist (ignore-errors (projectIDE-project-whitelist (projectIDE-cache-project cache)))))
+    (when (projectIDE-cache-p cache)
+      (setf (projectIDE-cache-exclude cache) exclude)
+      (setf (projectIDE-cache-whitelist cache) whitelist))))
 
 
 
@@ -1804,7 +1895,8 @@ STATE
 Type:\t\t integer
 Descri.:\t The file caching state."
   
-  (setf (projectIDE-cache-file-cache-state (gethash signature projectIDE-runtime-cache)) state))
+  (ignore-errors
+   (setf (projectIDE-cache-file-cache-state (gethash signature projectIDE-runtime-cache)) state)))
 
 
 
@@ -1817,12 +1909,13 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
-  (let ((path (projectIDE-record-path (gethash signature projectIDE-runtime-record)))
+  (let ((path (ignore-errors (projectIDE-record-path (gethash signature projectIDE-runtime-record))))
         (cache (gethash signature projectIDE-runtime-cache)))
-    (setf (projectIDE-cache-file-cache cache)
-          (fdex-new path
-                    (projectIDE-manipulate-filter path (projectIDE-cache-exclude cache))
-                    (projectIDE-manipulate-filter path (projectIDE-cache-whitelist cache))))))
+    (when (projectIDE-cache-p)
+      (setf (projectIDE-cache-file-cache cache)
+            (fdex-new path
+                      (projectIDE-manipulate-filter path (projectIDE-cache-exclude cache))
+                      (projectIDE-manipulate-filter path (projectIDE-cache-whitelist cache)))))))
 
 
 
@@ -1838,8 +1931,10 @@ FILE
 Type:\t\t string
 Descrip.:\t File path."
     
-  (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))
-        (projectIDE-add-to-list (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) file)))
+  (let ((cache (gethash signature projectIDE-runtime-cache)))
+    (when (projectIDE-cache-p cache)
+      (setf (projectIDE-cache-opened-buffer cache)
+            (projectIDE-add-to-list (projectIDE-cache-opened-buffer cache) file)))))
 
 
 
@@ -1854,9 +1949,11 @@ Descrip.:\t A project based unique ID.
 FILE
 Type:\t\t string
 Descrip.:\t File path."
-  
-  (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache))
-        (cl-remove file (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) :test 'equal)))
+
+  (let ((cache (gethash signature projectIDE-runtime-cache)))
+    (when (projectIDE-cache-p cache)
+      (setf (projectIDE-cache-opened-buffer cache)
+            (cl-remove file (projectIDE-cache-opened-buffer cache) :test 'equal)))))
 
 
 
@@ -1868,7 +1965,8 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) nil))
+  (ignore-errors
+   (setf (projectIDE-cache-opened-buffer (gethash signature projectIDE-runtime-cache)) nil)))
 
 
 
@@ -1895,7 +1993,8 @@ Descrip.:\t If buffer is not provided, current buffer is used."
     (setq filename (file-name-sans-extension filename) ))
   
     (when table
-      (puthash filename (make-projectIDE-assocache :state t :filelist filelist) table))))
+      (setf table
+       (puthash filename (make-projectIDE-assocache :state t :filelist filelist) table)))))
 
 
 
@@ -1977,12 +2076,11 @@ Descrip.:\t A project based unique ID.
 \t\t\t If signature is not provided, return opened buffers from all project."
   
   (if signature
-      (let ((buffers (hash-table-keys projectIDE-runtime-Btrace))
-            buffers-new)
-        (dolist (buffer buffers)
+      (let (buffers)
+        (dolist (buffer (hash-table-keys projectIDE-runtime-Btrace))
           (when (equal (gethash buffer projectIDE-runtime-Btrace) signature)
-            (push buffer buffers-new)))
-        buffers-new)
+            (push buffer buffers)))
+        buffers)
     (hash-table-keys projectIDE-runtime-Btrace)))
 
 
@@ -2041,7 +2139,7 @@ Descrip.:\t If buffer is not provided, current buffer is used."
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; projectIDE module
 
-(defvar projectIDE-runtime-packages nil
+(defvar projectIDE-runtime-modules nil
   "Store and manage modules.
 Never attempt to modify it directly.")
 
@@ -2068,9 +2166,14 @@ It should be always nil when checking for it.
 Because it store a idle timer with 0 second.
 Never attempt to modify it directly.")
 
+(defvar projectIDE-module-memory nil
+  "Store temp variable for modules.
+It is a hash table will :key var :value value.
+This is a temporary variable pool maintains only at
+current Emacs session.
+Never attempt to modify it directly.")
 
-
-(cl-defstruct projectIDE-package
+(cl-defstruct projectIDE-module
   name
   functions
   signatures
@@ -2089,29 +2192,71 @@ Never attempt to modify it directly.")
 
 
 (defun projectIDE-get-function-key (function)
+  
+  "Return the keybind for FUNCTION.
+
+Return
+Type:\t\t internal Emacs key representation or nil
+Descrip.:\t\t Project specific keybind for FUNCTION.
+\t\t\t Return nil if no keybind found."
+  
   (plist-get projectIDE-key-table function))
+
 
 
 (defun projectIDE-add-module-signature (module signature)
 
-  (let ((module (plist-get projectIDE-runtime-packages module)))
+  "Add to MODULE with SIGNATURE TO INDICATE THAT
+MODULE IS IN USE BY PROJECT GIVEN BY SIGNATURE.
+
+RETURN
+Type:\T\T BOOL
+Descrip.:\T RETURN T IF SIGNATURE is added to MODULE successfully.
+\t\t\t Otherwise, return nil.
+ 
+MODULE
+Type:\t\t symbol
+Descrip.:\t Name of the module.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+  
+  (let ((module (plist-get projectIDE-runtime-modules module)))
     (if module
         (progn
-          (cl-pushnew signature (projectIDE-package-signatures module) :test 'equal)
+          (cl-pushnew signature (projectIDE-module-signatures module) :test 'equal)
           t)
       nil)))
 
+
+(defun projectIDE-runtime-memory-set ())
+(defun projectIDE-runtime-memory-get ())
+(defun projectIDE-persist-memory-set ())
+(defun projectIDE-persist-memory-get ())
+
+
 (defun projectIDE-register (package function)
   
-  "Register FUNCTION from PACKAGE to `projectIDE-runtime-packages'."
+  "Register FUNCTION from PACKAGE to `projectIDE-runtime-modules'.
+
+The only use of this function is under
+`projectIDE-defun'
+`projectIDE-cl-defun'
+`projectIDE-defmacro'
+`projectIDE-cl-defmacro'
+
+When modules use these \"projectIDE-defX\" to define functions,
+they will automatically add to `projectIDE-runtime-modules'
+and their functions are also recorded."
   
-  (let ((pack (plist-get projectIDE-runtime-packages package)))
+  (let ((pack (plist-get projectIDE-runtime-modules package)))
     (if pack
-        (cl-pushnew function (projectIDE-package-functions pack))
-      (setq projectIDE-runtime-packages (plist-put
-                                         projectIDE-runtime-packages
+        (cl-pushnew function (projectIDE-module-functions pack))
+      (setq projectIDE-runtime-modules (plist-put
+                                         projectIDE-runtime-modules
                                          package
-                                         (make-projectIDE-package :name package :functions (list function)))))))
+                                         (make-projectIDE-module :name package :functions (list function)))))))
 
 
 
@@ -2193,7 +2338,8 @@ The function defined by `projectIDE-cl-defmarco' will be managed by projectIDE."
 
 
 
-;; Getter and setter functions
+;;; Getter and setter functions
+;;fff (defun projectIDE-get-all-functions-from-module (name))
 
 (defun projectIDE-get-all-functions-from-module (name)
   
@@ -2209,8 +2355,10 @@ NAME
 Type:\t\t symbol
 Descrip.:\t\t Name of function."
 
-  (let ((module (plist-get projectIDE-runtime-packages name)))
-    (and module (projectIDE-package-functions module))))
+  (let ((module (plist-get projectIDE-runtime-modules name)))
+    (and (projectIDE-module-p module) (projectIDE-module-functions module))))
+
+
 
 (defun projectIDE-get-function-object (name)
   
@@ -2230,6 +2378,9 @@ Descrip.:\t\t Name of function."
   
   (gethash name projectIDE-runtime-functions))
 
+
+
+
 (defun projectIDE-get-function-object-type (name)
 
   "Return the type of defing of function given by NAME
@@ -2247,7 +2398,7 @@ Type:\t\t symbol
 Descrip.:\t\t Name of function."
 
   (let* ((function (gethash name projectIDE-runtime-functions))
-         (type (and function (projectIDE-function-type function))))
+         (type (and (projectIDE-function-p function) (projectIDE-function-type function))))
     type))
 
 ;; projectIDE module endls

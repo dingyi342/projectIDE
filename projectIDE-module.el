@@ -112,7 +112,7 @@ Descrip.:\t Symbol of the module name."
       (remhash function projectIDE-runtime-functions)))
 
   ;; Remove module record
-  (cl-remf projectIDE-runtime-packages name)
+  (cl-remf projectIDE-runtime-modules name)
 
   ;; Unload the whole package
   (with-demoted-errors (unload-feature name)))

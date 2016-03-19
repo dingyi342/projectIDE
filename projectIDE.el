@@ -177,7 +177,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                      (string-remove-suffix "="
                                       (projectIDE-trim-string
                                        (buffer-substring-no-properties (line-beginning-position) (point)))))))
-                          (setq module-var (lax-plist-put module-var name var))
+                          (setq module-var (plist-put module-var (intern name) var))
                           (setf (projectIDE-project-module-var project) module-var)))
                         
                        (setq found t)))
@@ -297,18 +297,8 @@ CALLER
 Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
   
-  (let ((charset "1234567890abcdefghijklmnopqrstyvwxyzABCDEFGHIJKLMNOPQRSTYVWXYZ")
-        return)
-    
-    (dotimes (i 32)
-      (setq return (concat return (char-to-string (elt charset (random (length charset)))))))
-    
-    (when projectIDE-debug-mode
-      (projectIDE-message-handle 'Info
-                                 (format "Generated signature \"%s\"" return)
-                                 nil
-                                 (projectIDE-caller 'projectIDE-generate-signature caller)))
-    return))
+  (secure-hash 'sha1
+               (concat (current-time-string) (number-to-string (random)))))
 
 
 
@@ -1821,7 +1811,8 @@ association at other window."
           (add-hook 'after-save-hook 'projectIDE-after-save-new-file)
           
           (add-to-list 'auto-mode-alist '("\\.projectIDE\\'" . projectIDE-config-mode))
-          
+
+          ;; Two timers are set
           (when projectIDE-enable-background-service
             (setq projectIDE-timer-primary (run-with-idle-timer projectIDE-update-cache-interval t 'projectIDE-timer-function))
             (projectIDE-timer-function))
