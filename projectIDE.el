@@ -36,6 +36,7 @@
 (require 'projectIDE-debug)
 (require 'projectIDE-fstream)
 (require 'projectIDE-module)
+(require 'projectIDE-session)
 
 ;;; Config file function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;fff (defun projectIDE-parse-config (file &optional errormessage caller))
@@ -98,7 +99,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                       (cond
                        ((= counter 0) ;; "^signature *="
                         (when (projectIDE-project-signature project)
-                          (projectIDE-message-handle 'Error
+                          (projectIDE-message 'Error
                                                      (format "Config file corrupt. 'signature' in \"%s\" definded more than once." filename)
                                                      errormessage
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
@@ -107,7 +108,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                        
                        ((= counter 1) ;; "^name *="
                         (when (projectIDE-project-name project)
-                          (projectIDE-message-handle 'Error
+                          (projectIDE-message 'Error
                                                      (format "Config file corrupt. 'name' in \"%s\" definded more than once." filename)
                                                      errormessage
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
@@ -119,7 +120,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                (condition-case err
                                    (split-string-and-unquote (buffer-substring-no-properties (point) line-end))
                                  (end-of-file
-                                  (projectIDE-message-handle 'Error
+                                  (projectIDE-message 'Error
                                                              (format "Config file corrupt. Unbalance quote on line --%s-- of \"%s\"."
                                                                      (line-number-at-pos) filename)
                                                              errormessage
@@ -133,7 +134,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                (condition-case err
                                    (split-string-and-unquote (buffer-substring-no-properties (point) line-end))
                                  (end-of-file
-                                  (projectIDE-message-handle 'Error
+                                  (projectIDE-message 'Error
                                                              (format "Config file corrupt. Unbalance quote on line --%s-- of \"%s\"."
                                                                      (line-number-at-pos) filename)
                                                              errormessage
@@ -144,7 +145,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                        
                        ((= counter 4) ;; "^cachemode *="
                         (when (projectIDE-project-cachemode project)
-                          (projectIDE-message-handle 'Error
+                          (projectIDE-message 'Error
                                                      (format "Config file corrupt. 'cachemode' in \"%s\" definded more than once." filename)
                                                      errormessage
                                                      (projectIDE-caller 'projectIDE-parse-config caller))
@@ -167,7 +168,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                               (var (condition-case err
                                        (split-string-and-unquote (buffer-substring-no-properties (point) line-end))
                                      (end-of-file
-                                      (projectIDE-message-handle 'Error
+                                      (projectIDE-message 'Error
                                                                  (format "Config file corrupt. Unbalance quote on line --%s-- of \"%s\"."
                                                                          (line-number-at-pos) filename)
                                                                  errormessage
@@ -193,7 +194,7 @@ Descrip.:\t Function list calling this function for debug purpose."
         (setf (projectIDE-project-cachemode project) projectIDE-default-cachemode))
       
       (when projectIDE-debug-mode
-        (projectIDE-message-handle 'Info
+        (projectIDE-message 'Info
                                    (format "Parsed config file \"%s\" successfully" filename)
                                    nil
                                    (projectIDE-caller 'projectIDE-parse-config caller)))
@@ -243,7 +244,7 @@ Descrip:\t Prompt for a config file if it is provided."
     (when config
       (if (projectIDE-parse-config config)
           (progn
-            (projectIDE-message-handle 'Info
+            (projectIDE-message 'Info
                                        "Project config parse successfully. File saved."
                                        t
                                        (projectIDE-caller 'projectIDE-verify-config))
@@ -397,7 +398,7 @@ Descrip.:\t Function list calling this function for debug purpose."
           (delete-region (line-beginning-position) (line-end-position)))))
     
     (when projectIDE-debug-mode
-      (projectIDE-message-handle 'Info
+      (projectIDE-message 'Info
                                  (format "Project root created at \"%s\"" path)
                                  nil
                                  (projectIDE-caller 'projectIDE-root-creator caller)))))
@@ -433,7 +434,7 @@ Descrip.:\t Function list calling this function for debug purpose."
     (fout<<projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record (projectIDE-caller 'projectIDE-record-create caller)))
   
   (when projectIDE-debug-mode
-    (projectIDE-message-handle 'Info
+    (projectIDE-message 'Info
                                (format "Project record created for \"%s\"" configfile)
                                nil
                                (projectIDE-caller 'projectIDE-record-create caller))))
@@ -474,7 +475,7 @@ Descrip.:\t Function list calling this function for debug purpose."
     (fout<<projectIDE file 'cache (projectIDE-caller 'projectIDE-cache-create caller)))
   
   (when projectIDE-debug-mode
-    (projectIDE-message-handle 'Info
+    (projectIDE-message 'Info
                                (format "Project cache created for \"%s\"" configfile)
                                nil
                                (projectIDE-caller 'projectIDE-cache-create caller))))
@@ -540,7 +541,7 @@ Descrip.:\t Function list calling this function for debug purpose."
 
                 ;; found .projectIDE without signature
                 (if (y-or-n-p
-                     (projectIDE-message-handle
+                     (projectIDE-message
                       'Info
                       (format ".projectIDE root file found at \"%s\".\nMake this path as project root and index the project? " path)
                       nil
@@ -548,14 +549,14 @@ Descrip.:\t Function list calling this function for debug purpose."
                     (progn
                       (projectIDE-new-project path (and projectIDE-debug-mode (list 'projectIDE-identify-project 'find-file-hook)))
                       (setq signature (projectIDE-get-signature-by-path (buffer-file-name buffer)))
-                      (projectIDE-message-handle
+                      (projectIDE-message
                        'Info
                        (format "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
                                (file-name-nondirectory (directory-file-name (file-name-directory projectRoot))) path)
                        t
                        (projectIDE-caller 'projectIDE-identify-project '(find-file-hook))))
 
-                  (projectIDE-message-handle 'Info
+                  (projectIDE-message 'Info
                                              "File opened without indexing."
                                              t
                                              (projectIDE-caller 'projectIDE-identify-project '(find-file-hook)))
@@ -573,14 +574,14 @@ Descrip.:\t Function list calling this function for debug purpose."
       (projectIDE-track-buffer signature buffer (projectIDE-caller 'projectIDE-identify-project (or caller '(find-file-hook))))
       (run-hooks 'projectIDE-open-project-buffer-hook)
       (unless buffer
-        (projectIDE-message-handle
+        (projectIDE-message
          'Info
          (format "Opened file from project [%s]" (projectIDE-get-project-name signature))
          t
          (projectIDE-caller 'projectIDE-identify-project (or caller '(find-file-hook))))))
     
     (when (and projectIDE-debug-mode (not signature))
-      (projectIDE-message-handle
+      (projectIDE-message
        'Info
        (format "Opened buffer \"%s\" is not a indexed project." (or (buffer-file-name) "invalid buffer"))
        nil
@@ -609,7 +610,7 @@ Descrip.:\t Function list calling this function for debug purpose."
 
   (catch 'Error
     (unless (projectIDE-initialize-maybe)
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  "projectIDE not initialized."
                                  t
                                  (projectIDE-caller 'projectIDE-index-project caller))
@@ -622,7 +623,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                   nil
                                                   (projectIDE-caller 'projectIDE-index-project caller))))
         (if (yes-or-no-p
-             (concat (projectIDE-message-handle 'Warning
+             (concat (projectIDE-message 'Warning
                                                 (format ".projectIDE with signature found at \"%s\"" path)
                                                 nil
                                                 (projectIDE-caller 'projectIDE-index-project caller))
@@ -642,7 +643,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       (dolist (buffer buffers)
         (projectIDE-identify-project buffer (projectIDE-caller 'projectIDE-index-project caller))))
     
-    (projectIDE-message-handle 'Info
+    (projectIDE-message 'Info
                                (format "Project Indexed\nProject\t\t\t\t: %s\nProject Directory\t: %s"
                                        (projectIDE-project-name (projectIDE-parse-config (concat path PROJECTIDE-PROJECTROOT-IDENTIFIER)))
                                        path)
@@ -705,7 +706,7 @@ Descrip.:\t Function list calling this function for debug purpose."
   
   (catch 'Error
     (unless (projectIDE-get-cache signature)
-      (projectIDE-message-handle 'Warning
+      (projectIDE-message 'Warning
                                  (format "Project cache for \"%s\" not in projectIDE-runtime-cache." signature)
                                  nil
                                  (projectIDE-caller 'projectIDE-config-need-update? caller))
@@ -717,7 +718,7 @@ Descrip.:\t Function list calling this function for debug purpose."
               t
             nil)
         (when projectIDE-debug-mode
-          (projectIDE-message-handle 'Warning
+          (projectIDE-message 'Warning
                                      (format "Unable to find project config file for \"%s\"" signature)
                                      nil
                                      (projectIDE-caller 'projectIDE-config-need-update? caller)))
@@ -746,7 +747,7 @@ Descrip.:\t Function list calling this function for debug purpose."
   
   (catch 'Error
     (unless (projectIDE-get-cache signature)
-      (projectIDE-message-handle 'Warning
+      (projectIDE-message 'Warning
                                  (format "Project cache for %s not in projectIDE-runtime-cache." signature)
                                  nil
                                  (projectIDE-caller 'projectIDE-filter-changed? caller))
@@ -793,7 +794,7 @@ Descrip.:\t Function list calling this function for debug purpose."
            (project (projectIDE-parse-config project-config-file nil (projectIDE-caller 'projectIDE-update-project-config caller))))
 
       (unless project
-          (projectIDE-message-handle 'Error
+          (projectIDE-message 'Error
                                      (format "Update project config failed. Error reading \"%s\"." project-config-file)
                                      ErrorMessage
                                      (projectIDE-caller 'projectIDE-update-project-config caller))
@@ -806,7 +807,7 @@ Descrip.:\t Function list calling this function for debug purpose."
         (projectIDE-set-cache-project signature project))
     
   (when projectIDE-debug-mode
-    (projectIDE-message-handle 'Info
+    (projectIDE-message 'Info
                                (format "Project config for project \"%s\" update successfully."
                                        (projectIDE-get-project-name signature))
                                nil
@@ -832,7 +833,7 @@ Descrip.:\t Function list calling this function for debug purpose."
   (catch 'Error
     ;; Test whether signature is in projectIDE-runtime-cache
     (unless (projectIDE-get-cache signature)
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  (format "Attempt to update cache \"%s\" not in projectIDE-runtime-cache." signature)
                                  nil
                                  (projectIDE-caller 'projectIDE-update-cache-backend caller))
@@ -841,7 +842,7 @@ Descrip.:\t Function list calling this function for debug purpose."
     ;; Test whether config file need to be update and is able to update
     (when (projectIDE-config-need-update? signature (projectIDE-caller 'projectIDE-update-cache-backend caller))
       (unless (projectIDE-update-project-config signature nil (projectIDE-caller 'projectIDE-update-cache-backend caller))
-        (projectIDE-message-handle 'Error
+        (projectIDE-message 'Error
                                    (format "Project config file for project %s not found." signature)
                                    nil
                                    (projectIDE-caller 'projectIDE-update-cache-backend caller))
@@ -917,7 +918,7 @@ In simple term, it updates folders and files of the project."
   (interactive)
   (catch 'Error
     (unless (projectIDE-initialize-maybe)
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  "projectIDE not initialized."
                                  t
                                  (projectIDE-caller 'projectIDE-update-cache))
@@ -925,7 +926,7 @@ In simple term, it updates folders and files of the project."
     
     (let ((signature (projectIDE-get-Btrace-signature)))
       (unless signature
-        (projectIDE-message-handle 'Warning
+        (projectIDE-message 'Warning
                                    "Current buffer not in project record."
                                    t
                                    (projectIDE-caller 'projectIDE-update-cache))
@@ -934,11 +935,13 @@ In simple term, it updates folders and files of the project."
       (projectIDE-update-cache-backend signature (and projectIDE-debug-mode (list 'projectIDE-update-cache)))
       
       (when projectIDE-debug-mode
-        (projectIDE-message-handle 'Info
+        (projectIDE-message 'Info
                                    (format "Updated project cache for project \"%s\"" signature)
                                    nil
                                    (projectIDE-caller 'projectIDE-update-cache))))
     t))
+
+
 
 (defun projectIDE-track-buffer (signature &optional buffer caller)
   
@@ -1063,9 +1066,11 @@ This function is designed to advice before `save-buffers-kill-emacs'."
   (let ((signatures (projectIDE-get-all-caching-signature)))
     (dolist (signature signatures)
       (let ((cache (projectIDE-get-cache signature)))
-        (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer '(save-buffers-kill-emacs))))
-      (run-hooks 'projectIDE-close-project-hook)
-      (projectIDE-pop-cache signature)))
+        (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer '(save-buffers-kill-emacs))))))
+  (setq projectIDE-write-out-cache nil)
+  (dolist (buffer (projectIDE-get-buffer-list))
+    (kill-buffer buffer))
+  (setq projectIDE-write-out-cache t)
   (projectIDE-terminate))
 
 ;; Caching function ends ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1106,11 +1111,11 @@ This function is designed to advice before `save-buffers-kill-emacs'."
 
 (defun projectIDE-get-project-list ()
   
-  "Return a list of three lists from projectIDE-runtime-record.
+  "Return a list of three lists of projects from projectIDE-runtime-record.
 
 The first list is a list of project names.
 The second list is a list of project root paths.
-The third list is a list of project signatures.
+The third list is a list of project signatures-1.
 
 The nth item in these lists are pointing to same project.
 
@@ -1169,7 +1174,7 @@ Descrip.:\t Function list calling this function for debug purpose."
   (interactive)
   (catch 'Error
     (unless (projectIDE-initialize-maybe)
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  "projectIDE not initialized."
                                  t
                                  (projectIDE-caller 'projectIDE-open-project caller))
@@ -1199,7 +1204,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       ;; Check whether project has been opened
       ;; If yes, just open the last opened buffer
       (when (projectIDE-get-cache signature)
-        (projectIDE-message-handle 'Info
+        (projectIDE-message 'Info
                                    (format "Project [%s] had been opened already." (projectIDE-get-project-name signature))
                                    t
                                    (projectIDE-caller 'projectIDE-open-project caller))
@@ -1208,7 +1213,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       
       ;; Check whether .projectIDE exists under path
       (unless (file-exists-p (concat projectRoot PROJECTIDE-PROJECTROOT-IDENTIFIER))
-        (projectIDE-message-handle 'Warning
+        (projectIDE-message 'Warning
                                    (format ".projectIDE file not exists under \"%s\".
                                             If you moved the project, you can use `projectIDE-index-project' to reindex it." projectRoot)
                                    t
@@ -1217,7 +1222,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       
       ;; Check whether .projectIDE is able to be parsed
       (unless (setq project (projectIDE-parse-config (concat projectRoot PROJECTIDE-PROJECTROOT-IDENTIFIER)))
-        (projectIDE-message-handle 'Error
+        (projectIDE-message 'Error
                                    (format "Open project terminated due to .projectIDE file under \"%s\" corrupted." projectRoot)
                                    t
                                    (projectIDE-caller 'projectIDE-open-project caller))
@@ -1229,7 +1234,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       
       ;; check if cache load successfully
       (unless (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-open-project caller))
-        (projectIDE-message-handle 'Error
+        (projectIDE-message 'Error
                                    (format "Unable to load project cache: [%s] \"%s\"" (projectIDE-get-project-name signature) signature)
                                    t
                                    (projectIDE-caller 'projectIDE-open-project caller))
@@ -1306,7 +1311,7 @@ When OTHERWINDOW is provided, the folder will be open on other window."
   (interactive "p")
   (catch 'Error
     (unless (projectIDE-initialize-maybe)
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  "projectIDE not initialized."
                                  t
                                  (projectIDE-caller 'projectIDE-open-folder))
@@ -1325,7 +1330,7 @@ When OTHERWINDOW is provided, the folder will be open on other window."
           (setq sources (projectIDE-get-all-caching-signature))))
       
       (unless (car sources)
-        (projectIDE-message-handle 'Warning
+        (projectIDE-message 'Warning
                                    "Current buffer is not an indexed project."
                                    t
                                    (projectIDE-caller 'projectIDE-open-folder))
@@ -1352,7 +1357,7 @@ When OTHERWINDOW is provided, the folder will be open on other window."
                (string-remove-prefix project-prefix choice))))
       
       (unless (file-exists-p choice)
-        (projectIDE-message-handle 'Warning
+        (projectIDE-message 'Warning
                                    (format "%s no longer exist.\nYou may need to call `projectIDE-update-cache' first." choice)
                                    t
                                    'projectIDE-open-folder)
@@ -1435,7 +1440,7 @@ When OTHERWINDOW is provided, the file will be open on other window."
   (interactive "p")
   (catch 'Error
     (unless (projectIDE-initialize-maybe)
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  "projectIDE not initialized."
                                  t
                                  (projectIDE-caller 'projectIDE-open-file))
@@ -1454,7 +1459,7 @@ When OTHERWINDOW is provided, the file will be open on other window."
           (setq sources (projectIDE-get-all-caching-signature))))
       
       (unless (car sources)
-        (projectIDE-message-handle 'Warning
+        (projectIDE-message 'Warning
                                    "Current buffer is not an indexed project."
                                    t
                                    (projectIDE-caller 'projectIDE-open-file))
@@ -1481,7 +1486,7 @@ When OTHERWINDOW is provided, the file will be open on other window."
                (string-remove-prefix project-prefix choice))))
       
       (unless (file-exists-p choice)
-        (projectIDE-message-handle 'Warning
+        (projectIDE-message 'Warning
                                    (format "%s no longer exist.\nYou may need to call `projectIDE-update-cache' first." choice)
                                    t
                                    'projectIDE-open-file)
@@ -1548,7 +1553,7 @@ When OTHERWINDOW is provided , associated file is opened in other window."
 
   (catch 'Error
     (unless (projectIDE-initialize-maybe)
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  "projectIDE not initialized."
                                  t
                                  (projectIDE-caller 'projectIDE-switch-association))
@@ -1558,7 +1563,7 @@ When OTHERWINDOW is provided , associated file is opened in other window."
           (filelist (projectIDE-get-file-association)))
             
       (unless signature
-        (projectIDE-message-handle 'Warning
+        (projectIDE-message 'Warning
                                    "[%s] is not in an indexed project." (buffer-file-name)
                                    t
                                    (projectIDE-caller 'projectIDE-switch-association))
@@ -1571,14 +1576,14 @@ When OTHERWINDOW is provided , associated file is opened in other window."
                    (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-switch-association)))
               (setq filelist (projectIDE-generate-association-list))
               (projectIDE-set-file-association filelist))
-          (projectIDE-message-handle 'Warning
+          (projectIDE-message 'Warning
                                      (format "Project [%s] set to not generate file association.\nYou can change the behaviour by setting \"cachemode\" in \".projectIDE\" file." (projectIDE-get-project-name signature))
                                      t
                                      (projectIDE-caller 'projectIDE-switch-association))
           (throw 'Error nil)))
           
       (if (= (length filelist) 1)
-          (projectIDE-message-handle 'Info
+          (projectIDE-message 'Info
                                      "No association files found."
                                      t
                                      (projectIDE-caller 'projectIDE-switch-association))
@@ -1646,6 +1651,31 @@ If PREFIX is provided, close all projects."
   
   (setq projectIDE-write-out-cache t))
 
+
+
+(defun projectIDE-switch-project-buffer (prefix)
+
+  "An interactive function to switch to buffer of the same project.
+If PREFIX is provided, switch to buffer of all opened project."
+  
+  (interactive "p")
+
+  (catch 'no-project-buffer
+   (let (signature buffers choice)
+    (when (= prefix 1)
+      (setq signature (projectIDE-get-Btrace-signature)))
+    (pdm signature)
+    (setq buffers (mapcar 'buffer-name (projectIDE-get-buffer-list signature)))
+    (unless buffers
+      (projectIDE-message 'Info
+                          "No avaliable project buffer."
+                          t
+                          (projectIDE-caller 'projectIDE-switch-project-buffer))
+      (throw 'no-project-Error))
+
+    (setq choice (projectIDE-prompt "Choose buffer: " buffers))
+    (switch-to-buffer (get-buffer (buffer-name choice))))))
+
 ;;; Fetching data function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -1696,7 +1726,7 @@ If PREFIX is provided, close all projects."
              ;; Validate input
              ;; Check for initialization
              (unless (projectIDE-initialize-maybe)
-               (projectIDE-message-handle 'Error
+               (projectIDE-message 'Error
                                           "projectIDE is not initialized."
                                           nil
                                           (projectIDE-caller 'projectIDE-create))
@@ -1704,7 +1734,7 @@ If PREFIX is provided, close all projects."
              
              ;; Prevent null string project name
              (when (string= projectName "")
-               (projectIDE-message-handle 'Error
+               (projectIDE-message 'Error
                                           "Project name cannot be empty string."
                                           t
                                           (projectIDE-caller 'projectIDE-create))
@@ -1712,7 +1742,7 @@ If PREFIX is provided, close all projects."
              
              ;; Make sure project root directory can be generated
              (when (file-exists-p (concat dir projectName))
-               (projectIDE-message-handle 'Error
+               (projectIDE-message 'Error
                                           (format "Folder \"%s\" already exists in \"%s\". Operation cancelled." projectName dir)
                                           t
                                           (projectIDE-caller 'projectIDE-create))
@@ -1720,13 +1750,13 @@ If PREFIX is provided, close all projects."
              
              ;; Ask for user prompt
              (unless (or (not projectIDE-create-require-confirm) ;; Confirm project creation guard
-                         (y-or-n-p (projectIDE-message-handle
+                         (y-or-n-p (projectIDE-message
                                     'Info
                                     (format "\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s\nCreate Project ? "
                                             projectName ,templateDir (concat dir projectName))
                                     nil
                                     (projectIDE-caller 'projectIDE-create))))
-               (projectIDE-message-handle 'Info
+               (projectIDE-message 'Info
                                           "Projection creation cancelled."
                                           t
                                           (projectIDE-caller 'projectIDE-create))
@@ -1740,7 +1770,7 @@ If PREFIX is provided, close all projects."
                (make-directory projectRoot t)
                
                (unless (file-writable-p projectRoot)
-                 (projectIDE-message-handle 'Error
+                 (projectIDE-message 'Error
                                             (format "Project directory \"%s\" is not writable." dir)
                                             t
                                             (projectIDE-caller 'projectIDE-create))
@@ -1750,14 +1780,14 @@ If PREFIX is provided, close all projects."
                (projectIDE-new-project projectRoot (projectIDE-caller 'projectIDE-create))
                (run-hooks 'projectIDE-project-create-hook)
 
-               (projectIDE-message-handle 'Info
+               (projectIDE-message 'Info
                                           (format "Project Created\nProject\t\t\t\t: %s\nTemplate\t\t\t: %s\nProject Directory\t: %s"
                                                   projectName ,templateDir projectRoot)
                                           t
                                           (projectIDE-caller 'projectIDE-create)))))
       
       ;; Macro error message
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  (format "Template directory \"%s\" error\nEither not exists, not directory or non-accessible." templateDir)
                                  t
                                  (projectIDE-caller 'projectIDE-create)))))
@@ -1786,7 +1816,7 @@ If PREFIX is provided, close all projects."
   (interactive)
   (catch 'Error
     (when projectIDE-p
-      (projectIDE-message-handle 'Warning
+      (projectIDE-message 'Warning
                                  "projectIDE has already initialized."
                                  nil
                                  (projectIDE-caller 'projectIDE-initialize))
@@ -1822,7 +1852,7 @@ If PREFIX is provided, close all projects."
                 projectIDE-runtime-Btrace (make-hash-table :test 'eq :size 40)
                 projectIDE-runtime-functions (make-hash-table :test 'eq :size 100)
                 projectIDE-non-persist-memory (make-hash-table :test 'eq :size 100))
-          (projectIDE-message-handle 'Info
+          (projectIDE-message 'Info
                                      "projectIDE starts successfully."
                                      t
                                      (projectIDE-caller 'projectIDE-initialize))
@@ -1852,7 +1882,7 @@ If PREFIX is provided, close all projects."
           
           (run-hooks 'projectIDE-initialize-hook))
       
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  (format "projectIDE starts fail. Unable to read record file at %s" PROJECTIDE-RECORD-FILE)
                                  t
                                  (projectIDE-caller 'projectIDE-initialize)))

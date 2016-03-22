@@ -2304,7 +2304,7 @@ Descrip.:\t A project based unique ID."
 
 
 
-(defun projectIDE-set-nonpersist-memory(var value)
+(defun projectIDE-set-nonpersist-memory (var value)
   
   "Set VAR to VALUE in gloabl non persist memory."
   
@@ -2313,11 +2313,11 @@ Descrip.:\t A project based unique ID."
 
 
 
-(defun projectIDE-get-runtime-memory (var)
+(defun projectIDE-get-nonpersist-memory (var)
   
-  "Get VALUE from VAR in gloabl non persist memory."
+  "Get value from VAR in gloabl non persist memory."
   
-  (gethash var value projectIDE-non-persist-memory))
+  (gethash var projectIDE-non-persist-memory))
 
 
 
@@ -2330,11 +2330,11 @@ Descrip.:\t A project based unique ID."
 
 
 
-(defun projectIDE-get-persist-memory (var value)
+(defun projectIDE-get-persist-memory (var)
   
   "Get VALUE from VAR in gloabl persist memory."
   
-  (gethash var value projectIDE-non-persist-memory))
+  (gethash var projectIDE-non-persist-memory))
 
 
 
@@ -2377,7 +2377,7 @@ Descrip.:\t A project based unique ID."
   (let (cache)
     (when (and (symbolp var)
                (hash-table-p (setq cache (gethash (concat signature "modulepersist") projectIDE-runtime-cache))))
-   (gethash var value))))
+   (gethash var cache))))
 
 
 

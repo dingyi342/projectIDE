@@ -88,7 +88,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                          (file-directory-p parentPath))
                  (write-region "" nil file nil 'inhibit nil 'exc1))
                (unless (file-writable-p file)
-                 (projectIDE-message-handle 'Error
+                 (projectIDE-message 'Error
                                             (format "Unable to write to %s." file)
                                             nil
                                             'fout<<projectIDE
@@ -97,7 +97,7 @@ Descrip.:\t Function list calling this function for debug purpose."
 
            ;; Check symbol exists
            (unless (boundp data)
-             (projectIDE-message-handle 'Error
+             (projectIDE-message 'Error
                                         (format "Symbol %s is undefined." (symbol-name data))
                                         nil
                                         'fout<<projectIDE
@@ -109,7 +109,7 @@ Descrip.:\t Function list calling this function for debug purpose."
              (insert (prin1-to-string (symbol-value data))))
 
            (when (and projectIDE-debug-mode noError)
-             (projectIDE-message-handle 'Info
+             (projectIDE-message 'Info
                                         (format "Data %s written to file %s" (symbol-name data) file)
                                         nil
                                         'fout<<projectIDE
@@ -142,7 +142,7 @@ Descrip.:\t Function list calling this function for debug purpose."
   (catch 'Error
     ;; Check file accessibility
     (unless (file-readable-p file)
-      (projectIDE-message-handle 'Error
+      (projectIDE-message 'Error
                                  (format "File %s is not accessible" file)
                                  nil
                                  'fin>>projectIDE
@@ -155,7 +155,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       (unless (equal (point-min) (point-max))
         (if (boundp symbol)
             (set symbol (read (buffer-string)))
-          (projectIDE-message-handle 'Error
+          (projectIDE-message 'Error
                                      (format "Symbol %s is undefined." (symbol-name symbol))
                                      nil
                                      'fin>>projectIDE
@@ -163,7 +163,7 @@ Descrip.:\t Function list calling this function for debug purpose."
           (throw 'Error nil))))
 
     (when projectIDE-debug-mode
-      (projectIDE-message-handle 'Info
+      (projectIDE-message 'Info
                                  (format "Data from %s read into %s" file (symbol-name symbol))
                                  nil
                                  'fin>>projectIDE

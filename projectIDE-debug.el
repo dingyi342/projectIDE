@@ -36,7 +36,7 @@
 ;;; Code:
 (require 'projectIDE-header)
 
-(defun projectIDE-message-handle (type message &optional print functions)
+(defun projectIDE-message (type message &optional print functions)
   "This funtion handle messages from projectIDE for debug purpose.
 TYPE specifies message type.  It can be 'Info, 'Warning or 'Error.
 Warning and Error message will be logged by default for debug purpose.
