@@ -373,7 +373,7 @@ Descrip.:\t Function list calling this function for debug purpose."
               "## You can see documentation for all keys.\n"
               "## Keys must start on a newline and end with a '='.\n"
               "## Below is an example for key 'signature.\n"
-              "signature= " signature "\n"
+              "signature = " signature "\n"
               "## Signature is unique for each project.\n"
               "## ProjectIDE used the signature to trace every data on that project.\n"
               "## So never create or change the signature manually!!!\n\n")
@@ -382,16 +382,16 @@ Descrip.:\t Function list calling this function for debug purpose."
       ;; If name not exists in projectIDE, create for it
       (unless name
         (setq name (file-name-nondirectory (directory-file-name (file-name-directory file))))
-        (insert "name= " name "\n"))
+        (insert "name = " name "\n"))
       
       ;; Handle exclude
-      (insert "exclude= " (mapconcat 'identity (projectIDE-project-exclude project) " ") "\n")
+      (insert "exclude = " (mapconcat 'identity (projectIDE-project-exclude project) " ") "\n")
       (save-excursion
         (while (search-forward-regexp "^exclude *=" nil t)
           (delete-region (line-beginning-position) (line-end-position))))
       
       ;; Handle whitelist
-      (insert "whitelist=" (mapconcat 'identity (projectIDE-project-whitelist project) " ") "\n")
+      (insert "whitelist =" (mapconcat 'identity (projectIDE-project-whitelist project) " ") "\n")
       (save-excursion
         (while (search-forward-regexp "^whitelist *=" nil t)
           (delete-region (line-beginning-position) (line-end-position)))))
@@ -571,6 +571,7 @@ Descrip.:\t Function list calling this function for debug purpose."
     ;; update the last-open time of project record
     (when signature
       (projectIDE-track-buffer signature buffer (projectIDE-caller 'projectIDE-identify-project (or caller '(find-file-hook))))
+      (run-hooks 'projectIDE-open-project-buffer-hook)
       (unless buffer
         (projectIDE-message-handle
          'Info
@@ -978,7 +979,8 @@ Descrip.:\t Function list calling this function for debug purpose."
         (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-track-buffer caller))
       (projectIDE-set-file-cache-state signature 0))
 
-    (projectIDE-load-all-modules signature))
+    (projectIDE-load-all-modules signature)
+    (run-hooks 'projectIDE-open-project-hook))
   
   (projectIDE-add-opened-buffer signature (buffer-file-name buffer))
   (projectIDE-set-project-last-open signature))
@@ -1010,18 +1012,17 @@ Descrip.:\t The buffer being identified.
 CALLER
 Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
-  
-  (let ((signature (projectIDE-get-Btrace-signature buffer)))
-    (projectIDE-pop-Btrace buffer)
-    
-    (when (projectIDE-get-cache signature)
-      (if (> (length (projectIDE-get-opened-buffer signature)) 1)
-          (projectIDE-remove-opened-buffer signature (buffer-file-name buffer))
-        (when projectIDE-write-out-cache
-          (let ((cache (projectIDE-get-cache signature)))
-            (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache
-                              (projectIDE-caller 'projectIDE-untrack-buffer (or caller '(kill-buffer-hook))))))
-        (projectIDE-pop-cache signature)))))
+
+ (let ((signature (projectIDE-get-Btrace-signature buffer)))
+   (when signature
+     (run-hooks 'projectIDE-kill-project-buffer-hook)
+     (projectIDE-pop-Btrace buffer)
+      
+      (when (projectIDE-get-cache signature)
+        (if (> (length (projectIDE-get-opened-buffer signature)) 1)
+            (projectIDE-remove-opened-buffer signature (buffer-file-name buffer))
+          (run-hooks 'projectIDE-close-project-hook)
+          (projectIDE-pop-cache signature))))))
 
 
 
@@ -1055,6 +1056,7 @@ It flags the newly created file to cache at priority."
 
 
 (defun projectIDE-before-emacs-kill (&optional ARG)
+  
   "Write all cache in projectIDE-runtime-cache to harddisk.
 This function is designed to advice before `save-buffers-kill-emacs'."
   
@@ -1062,6 +1064,7 @@ This function is designed to advice before `save-buffers-kill-emacs'."
     (dolist (signature signatures)
       (let ((cache (projectIDE-get-cache signature)))
         (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer '(save-buffers-kill-emacs))))
+      (run-hooks 'projectIDE-close-project-hook)
       (projectIDE-pop-cache signature)))
   (projectIDE-terminate))
 
@@ -1516,7 +1519,8 @@ Descrip.:\t The buffer being identified.
   (let* ((signature (projectIDE-get-Btrace-signature (or buffer (current-buffer))))
          (filename (file-name-nondirectory (buffer-file-name (or buffer (current-buffer)))))
          regexp)
-    
+
+    ;;!!! need to take care java library
     (while (not (equal filename (file-name-sans-extension filename)))
       (setq filename (file-name-sans-extension filename)))
     
@@ -1614,21 +1618,30 @@ association at other window."
 
 
 
-(defun projectIDE-close-project ()
+(defun projectIDE-close-project (prefix)
 
-  "An interactive function to close all buffers in current project."
+  "An interactive function to close all buffers in current project.
+If PREFIX is provided, close all projects."
   
-  (interactive)
+  (interactive "p")
   (setq projectIDE-write-out-cache nil)
-  
-  (let* ((signature (projectIDE-get-Btrace-signature))
-         (buffers (buffer-list))
-         (cache (projectIDE-get-cache signature)))
-    
-    (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-close-project))
 
-    (dolist (buffer buffers)
-      (when (equal signature (projectIDE-get-Btrace-signature buffer))
+  (if (= prefix 1)
+      (let* ((signature (projectIDE-get-Btrace-signature))
+             (buffers (buffer-list))
+             (cache (projectIDE-get-cache signature)))
+        (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-close-project))
+        (dolist (buffer buffers)
+          (when (equal signature (projectIDE-get-Btrace-signature buffer))
+            (kill-buffer buffer))))
+    
+    (let* ((signatures (projectIDE-get-all-caching-signature))
+           (buffers (buffers-list))
+           cache)
+      (dolist (signature signatures)
+        (setq cache (projectIDE-get-cache signature))
+        (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-close-project)))
+      (dolist (buffer buffers)
         (kill-buffer buffer))))
   
   (setq projectIDE-write-out-cache t))
@@ -1785,20 +1798,30 @@ association at other window."
     ;; Check global RECORD file exist
     (unless (file-exists-p PROJECTIDE-RECORD-FILE)
       (write-region "" nil PROJECTIDE-RECORD-FILE t 'inhibit))
+    ;; Check global PERSIST MEMORY file exist
+    (unless (file-exists-p PROJECTIDE-PERSIST-MEMORY-FILE)
+      (write-region "" nil PROJECTIDE-PERSIST-MEMORY-FILE t 'inhibit))
     ;; Check cache folder exist
     (unless (file-exists-p PROJECTIDE-CACHE-PATH)
       (make-directory PROJECTIDE-CACHE-PATH))
     ;; Check log folder exist
     (unless (file-exists-p PROJECTIDE-LOG-PATH)
       (make-directory PROJECTIDE-LOG-PATH))
+    ;; Check module folder exist
+    (unless (file-exists-p PROJECTIDE-MODULE-CACHE-PATH)
+      (make-directory PROJECTIDE-MODULE-CACHE-PATH))
     
-    (if (fin>>projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record)
+    (if (and (fin>>projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record)
+             (fin>>projectIDE PROJECTIDE-PERSIST-MEMORY-FILE 'projectIDE-persist-memory))
         (progn
           (unless projectIDE-runtime-record
             (setq projectIDE-runtime-record (make-hash-table :test 'equal :size 40)))
+          (unless projectIDE-persist-memory
+            (setq projectIDE-persist-memory (make-hash-table :test 'eq :size 100)))
           (setq projectIDE-runtime-cache (make-hash-table :test 'equal :size 20)
                 projectIDE-runtime-Btrace (make-hash-table :test 'eq :size 40)
-                projectIDE-runtime-functions (make-hash-table :test 'eq :size 100))
+                projectIDE-runtime-functions (make-hash-table :test 'eq :size 100)
+                projectIDE-non-persist-memory (make-hash-table :test 'eq :size 100))
           (projectIDE-message-handle 'Info
                                      "projectIDE starts successfully."
                                      t
@@ -1806,9 +1829,12 @@ association at other window."
 
           (add-hook 'find-file-hook 'projectIDE-identify-project)
           (add-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
+          ;; advice set-buffer is better than switch-to-buffer in terms of performance
+          (advice-add 'set-buffer :after 'projectIDE-advice-buffer-change)
           (advice-add 'save-buffers-kill-emacs :before #'projectIDE-before-emacs-kill)
           (add-hook 'before-save-hook 'projectIDE-before-save-new-file)
           (add-hook 'after-save-hook 'projectIDE-after-save-new-file)
+          (advice-add 'kill-buffer :after 'projectIDE-advice-buffer-change)
           
           (add-to-list 'auto-mode-alist '("\\.projectIDE\\'" . projectIDE-config-mode))
 
@@ -1847,9 +1873,11 @@ association at other window."
     (projectIDE-mode 0)
     (remove-hook 'find-file-hook 'projectIDE-identify-project)
     (remove-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
-    (advice-remove 'save-buffers-kill-emacs  #'projectIDE-before-emacs-kill)
+    (advice-remove 'set-buffer 'projectIDE-advice-buffer-change)
+    (advice-remove 'save-buffers-kill-emacs  'projectIDE-before-emacs-kill)
     (remove-hook 'before-save-hook 'projectIDE-before-save-new-file)
     (remove-hook 'after-save-hook 'projectIDE-after-save-new-file)
+    (advice-remove 'kill-buffer 'projectIDE-advice-buffer-change)
     (setq projectIDE-runtime-record nil
           projectIDE-runtime-cache nil
           projectIDE-runtime-Btrace nil

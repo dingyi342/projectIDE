@@ -10,7 +10,7 @@
 (projectIDE-unload-module 'testmodule)
 (projectIDE-unload-module 'testmodule2)
 
-(projectIDE-print-variable projectIDE-runtime-packages)
+(projectIDE-print-variable projectIDE-runtime-modules)
 (projectIDE-print-variable projectIDE-runtime-functions)
 
 (progn "Use this to clean up this page. Just go to the end of this progn and run 'eval-last-sexp'"

@@ -34,14 +34,15 @@
 (require 'projectIDE-debug)
 
 (defun projectIDE-advice-buffer-change (&rest args)
-  
+  ;; In reality, to improve performance
+  ;; advice after set-buffer instead of switch-to-buffer
+  ;; advice after kill-buffer instead of adding to kill-buffer-hook
 "Designed to be adviced after `switch-to-buffer'
-add to`kill-buffer-hook'."
+add to `kill-buffer-hook'."
 
-(when projectIDE-renew-modules-timer
-    (cancel-timer projectIDE-renew-modules-timer))
+(unless projectIDE-renew-modules-timer
   (setq projectIDE-renew-modules-timer
-        (run-with-idle-timer 0 nil 'projectIDE-module-controller)))
+        (run-with-idle-timer 0 nil 'projectIDE-module-controller))))
 
 
 
@@ -84,7 +85,8 @@ Descrip.:\t Symbol of the module name."
   (let ((initializer (intern (concat (symbol-name name) "-initialize"))))
     (when (projectIDE-get-function-object initializer)
       (projectIDE-realize-function initializer)
-      (apply initializer)))
+      (pdm initializer)
+      (funcall initializer)))
   (setq projectIDE-current-loading-module nil))
 
 
@@ -102,7 +104,7 @@ Descrip.:\t Symbol of the module name."
   (let ((terminator (intern (concat (symbol-name name) "-terminate"))))
     (when (projectIDE-get-function-object terminator)
       (projectIDE-realize-function terminator)
-      (apply terminator)))
+      (funcall terminator)))
 
   ;; Unbind all functions in module
   ;; Remove function records in projectIDE-runtime-functions
@@ -146,8 +148,9 @@ Descrip.:\t Symbol of the module name."
    (let ((functions (projectIDE-get-all-functions-from-module module)))
      (dolist (function functions)
        (projectIDE-unrealize-key function)
-      (fmakunbound function)))
+       (fmakunbound function)))
    (setq projectIDE-active-modules (cl-remove module projectIDE-active-modules)))
+
 
 
 (defun projectIDE-load-all-modules (signature)

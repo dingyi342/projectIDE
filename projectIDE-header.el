@@ -76,9 +76,7 @@ LIST
 Type:\t\t string list
 Descrip.:\t A string list of regexp."
 
-  (mapconcat (lambda (elt) (concat "\\(" elt "\\)"))
-             list
-             "\\|"))
+  (mapconcat 'identity list "\\|"))
 
 
 
@@ -463,8 +461,9 @@ above 127 (such as ISO Latin-1) can be included if you use a vector."
 ;;vvv (defcustom projectIDE-completion-system)
 
 (defcustom projectIDE-database-path
-  (file-name-as-directory
-   (concat (file-name-as-directory user-emacs-directory) "projectIDE"))
+  (expand-file-name
+   (file-name-as-directory
+    (concat (file-name-as-directory user-emacs-directory) "projectIDE")))
   "Path for storing projectIDE RECORD database."
   :tag "Main database path"
   :type 'directory
@@ -501,6 +500,34 @@ above 127 (such as ISO Latin-1) can be included if you use a vector."
 (defcustom projectIDE-terminate-hook nil
   "Hook runs when projectIDE terminates."
   :tag "projectIDE-terminate-hook"
+  :type 'hook
+  :group 'projectIDE-global
+  :group 'projectIDE-hook)
+
+(defcustom projectIDE-open-project-buffer-hook nil
+  "Hooks run when a project buffer opened."
+  :tag "projectIDE-kill-project-buffer-hook"
+  :type 'hook
+  :group 'projectIDE-global
+  :group 'projectIDE-hook)
+
+(defcustom projectIDE-kill-project-buffer-hook nil
+  "Hooks run just before a project buffer was closed."
+  :tag "projectIDE-kill-project-buffer-hook"
+  :type 'hook
+  :group 'projectIDE-global
+  :group 'projectIDE-hook)
+
+(defcustom projectIDE-open-project-hook nil
+  "Hooks run when the project buffer first open."
+  :tag "projectIDE-close-project-hook"
+  :type 'hook
+  :group 'projectIDE-global
+  :group 'projectIDE-hook)
+
+(defcustom projectIDE-close-project-hook nil
+  "Hooks run just before the last buffer of project was closed."
+  :tag "projectIDE-close-project-hook"
   :type 'hook
   :group 'projectIDE-global
   :group 'projectIDE-hook)
@@ -990,6 +1017,20 @@ Never attempt to modify it directly.")
 after closing the last file.
 Never attempt to modify it directly.")
 
+(defvar projectIDE-non-persist-memory nil
+  "Store global temporary variable.
+It is a hash table with key = var and value = value.
+This is a temporary variable pool maintains only at
+current Emacs session.
+Anything stored will be discarded upon Emacs closed.
+Never attempt to modify it directly.")
+
+(defvar projectIDE-persist-memory nil
+  "Store global persistent variable.
+It is a hash table with key = var and value = value.
+This is a persistent variable pool maintains across Emacs session.
+Anything stored will be able to retrieve even if Emacs restarted.")
+
 (defvar projectIDE-timer-primary nil
   "Timer for `projectIDE-timer-function-primary' to repeat itself, or nil.
 Never attempt to modify it directly.")
@@ -1114,8 +1155,8 @@ Descript.:\t File or folder path in string."
     ;; Search all recods matched path
     (dolist (record records)
       (when (and (projectIDE-record-p record)(string-prefix-p (projectIDE-record-path record) path))
-        (cl-pushnew 'candidates (projectIDE-record-signature record) :test 'equal)))
-
+        (cl-pushnew (projectIDE-record-signature record) candidates :test 'equal)))
+    
     (setq signature (car candidates))
 
     ;; Use the best match result
@@ -1343,6 +1384,11 @@ Descrip.:\t A project based unique ID."
   state
   filelist)
 
+(cl-defstruct projectIDE-hard
+  value
+  lastacces
+  )
+
 ;;; Getter and setter function
 ;; Project object doesn't provide setter function
 ;; because it can only create by projectIDE-parse-config
@@ -1413,7 +1459,7 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (ignore-errors
-      (projectIDE-cache-p (gethash signature projectIDE-runtime-cache))))
+    (gethash signature projectIDE-runtime-cache)))
 
 
 
@@ -1572,9 +1618,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (eq projectIDE-CACHEMODE-background-update-cache
-      (logand
-       projectIDE-CACHEMODE-background-update-cache
-       (ignore-errors
+      (ignore-errors
+        (logand
+         projectIDE-CACHEMODE-background-update-cache
          (projectIDE-project-cachemode
           (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
@@ -1594,9 +1640,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (eq projectIDE-CACHEMODE-open-project-update-cache
-      (logand
-       projectIDE-CACHEMODE-open-project-update-cache
-       (ignore-errors
+      (ignore-errors
+        (logand
+         projectIDE-CACHEMODE-open-project-update-cache
          (projectIDE-project-cachemode
           (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
@@ -1617,9 +1663,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (eq projectIDE-CACHEMODE-update-cache-important-command
-      (logand
-       projectIDE-CACHEMODE-update-cache-important-command
-       (ignore-errors
+      (ignore-errors
+        (logand
+         projectIDE-CACHEMODE-update-cache-important-command
          (projectIDE-project-cachemode
           (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
@@ -1640,9 +1686,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (eq projectIDE-CACHEMODE-update-cache-pre-prompt
-      (logand
-       projectIDE-CACHEMODE-update-cache-pre-prompt
-       (ignore-errors
+      (ignore-errors
+        (logand
+         projectIDE-CACHEMODE-update-cache-pre-prompt
          (projectIDE-project-cachemode
           (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
@@ -1661,9 +1707,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (eq projectIDE-CACHEMODE-generate-association
-      (logand
-       projectIDE-CACHEMODE-generate-association
-       (ignore-errors
+      (ignore-errors
+        (logand
+         projectIDE-CACHEMODE-generate-association
          (projectIDE-project-cachemode
           (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
@@ -1774,7 +1820,9 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (ignore-errors
-    (projectIDE-project-module (gethash signature projectIDE-runtime-cache))))
+    (projectIDE-project-module
+     (projectIDE-cache-project
+      (gethash signature projectIDE-runtime-cache)))))
 
 
 
@@ -1818,14 +1866,26 @@ Type:\t\t projectIDE-cache object
 Descrip.:\t The cache object to be put in projectIDE-runtime-cache."
 
   (puthash signature cache projectIDE-runtime-cache)
-  (puthash (concat signature "module") (make-hash-table :size 100) projectIDE-runtime-cache))
-(when (eq projectIDE-CACHEMODE-generate-association
-          (logand
-           projectIDE-CACHEMODE-generate-association
-           (ignore-errors
-             (projectIDE-project-cachemode
-              (projectIDE-cache-project cache)))))
-  (puthash (concat signature "association") (make-hash-table :size 30 :test 'equal) projectIDE-runtime-cache))
+  
+  (unless (gethash (concat signature "modulenonpersist") projectIDE-runtime-cache)
+    (puthash (concat signature "modulenonpersist") (make-hash-table :size 100) projectIDE-runtime-cache))
+  
+  (when (file-readable-p (concat PROJECTIDE-MODULE-CACHE-PATH signature))
+      (let (modulepersist-cache)
+        (and
+         (fin>>projectIDE (concat PROJECTIDE-MODULE-CACHE-PATH signature) 'modulepersist-cache (projectIDE-caller 'projectIDE-push-cache))
+         (hash-table-p modulepersist-cache)
+         (puthash (concat signature "modulepersist") modulepersist-cache projectIDE-runtime-cache))))
+  (unless (gethash (concat signature "modulepersist") projectIDE-runtime-cache)
+    (puthash (concat signature "modulepersist") (make-hash-table :size 100) projectIDE-runtime-cache))
+  
+  (when (eq projectIDE-CACHEMODE-generate-association
+            (ignore-errors
+              (logand
+               projectIDE-CACHEMODE-generate-association
+               (projectIDE-project-cachemode
+                (projectIDE-cache-project cache)))))
+    (puthash (concat signature "association") (make-hash-table :size 30 :test 'equal) projectIDE-runtime-cache)))
 
 
 
@@ -1837,9 +1897,21 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
+
+  (when projectIDE-write-out-cache
+    (let ((cache (gethash signature projectIDE-runtime-cache)))
+      (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache
+                        (projectIDE-caller 'projectIDE-pop-cache))))
   (remhash signature projectIDE-runtime-cache)
+
+  (let ((cache (gethash (concat signature "modulepersist") projectIDE-runtime-cache)))
+    (fout<<projectIDE (concat PROJECTIDE-MODULE-CACHE-PATH signature) 'cache
+                      (projectIDE-caller 'projectIDE-pop-cache)))
+  (remhash (concat signature "modulepersist") projectIDE-runtime-cache)
+  
   (remhash (concat signature "association") projectIDE-runtime-cache)
-  (remhash (concat signature "module") projectIDE-runtime-cache))
+  ;; module-soft cache is kept
+  )
 
 
 
@@ -1911,7 +1983,7 @@ Descrip.:\t A project based unique ID."
 
   (let ((path (ignore-errors (projectIDE-record-path (gethash signature projectIDE-runtime-record))))
         (cache (gethash signature projectIDE-runtime-cache)))
-    (when (projectIDE-cache-p)
+    (when (projectIDE-cache-p cache)
       (setf (projectIDE-cache-file-cache cache)
             (fdex-new path
                       (projectIDE-manipulate-filter path (projectIDE-cache-exclude cache))
@@ -2139,6 +2211,14 @@ Descrip.:\t If buffer is not provided, current buffer is used."
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; projectIDE module
 
+(defconst PROJECTIDE-MODULE-CACHE-PATH
+  (file-name-as-directory (concat projectIDE-database-path "MODULE"))
+  "Folder path to individual project module cache.")
+
+(defconst PROJECTIDE-PERSIST-MEMORY-FILE
+  (concat projectIDE-database-path "MEMORY")
+  "File path to `projectIDE-hard-memory'.")
+
 (defvar projectIDE-runtime-modules nil
   "Store and manage modules.
 Never attempt to modify it directly.")
@@ -2164,13 +2244,6 @@ Never attempt to modify it directly.")
   "Store the timer for renewing modules.
 It should be always nil when checking for it.
 Because it store a idle timer with 0 second.
-Never attempt to modify it directly.")
-
-(defvar projectIDE-module-memory nil
-  "Store temp variable for modules.
-It is a hash table will :key var :value value.
-This is a temporary variable pool maintains only at
-current Emacs session.
 Never attempt to modify it directly.")
 
 (cl-defstruct projectIDE-module
@@ -2230,10 +2303,82 @@ Descrip.:\t A project based unique ID."
       nil)))
 
 
-(defun projectIDE-runtime-memory-set ())
-(defun projectIDE-runtime-memory-get ())
-(defun projectIDE-persist-memory-set ())
-(defun projectIDE-persist-memory-get ())
+
+(defun projectIDE-set-nonpersist-memory(var value)
+  
+  "Set VAR to VALUE in gloabl non persist memory."
+  
+  (when (symbolp var)
+    (puthash var value projectIDE-non-persist-memory)))
+
+
+
+(defun projectIDE-get-runtime-memory (var)
+  
+  "Get VALUE from VAR in gloabl non persist memory."
+  
+  (gethash var value projectIDE-non-persist-memory))
+
+
+
+(defun projectIDE-set-persist-memory (var value)
+  
+  "Set VAR to VALUE in gloabl persist memory."
+  
+  (when (symbolp var)
+    (puthash var value projectIDE-persist-memory)))
+
+
+
+(defun projectIDE-get-persist-memory (var value)
+  
+  "Get VALUE from VAR in gloabl persist memory."
+  
+  (gethash var value projectIDE-non-persist-memory))
+
+
+
+(defun projectIDE-set-module-nonpersist-memory (signature var value)
+  
+  "Set VAR to VALUE in non persist memory of module specified by SIGNATURE."
+  
+  (let (cache)
+    (when (and (symbolp var)
+               (hash-table-p (setq cache (gethash (concat signature "modulenonpersist") projectIDE-runtime-cache))))
+      (puthash var value cache))))
+
+
+
+(defun projectIDE-get-module-nonpersist-memory (signature var)
+  
+  "Get value from VAR in non persist memory of module specified by SIGNATURE."
+  
+  (let (cache)
+    (when (and (symbolp var)
+               (hash-table-p (setq cache (gethash (concat signature "modulenonpersist") projectIDE-runtime-cache))))
+      (gethash var cache))))
+
+
+
+(defun projectIDE-set-module-persist-memory (signature var value)
+  
+  "Set VAR to VALUE in persist memory of module specified by SIGNATURE."
+  
+  (let (cache)
+    (when (and (symbolp var)
+               (hash-table-p (setq cache (gethash (concat signature "modulepersist") projectIDE-runtime-cache))))
+      (puthash var value cache))))
+
+
+
+(defun projectIDE-get-module-persist-memory (signature var)
+  "Get value from in persist memory of module specified by SIGNATURE."
+  
+  (let (cache)
+    (when (and (symbolp var)
+               (hash-table-p (setq cache (gethash (concat signature "modulepersist") projectIDE-runtime-cache))))
+   (gethash var value))))
+
 
 
 (defun projectIDE-register (package function)
@@ -2302,7 +2447,7 @@ The function defined by `projectIDE-cl-defun' will be managed by projectIDE."
 
 (defmacro projectIDE-defmacro (name args &rest body)
 
-    "A wrapper to `demacro' that put the function in `projectIDE-runtime-functions'
+    "A wrapper to `defmacro' that put the function in `projectIDE-runtime-functions'
 instead of defining it directly.
 
 The function defined by `projectIDE-defmacro' will be managed by projectIDE."
