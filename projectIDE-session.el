@@ -71,7 +71,8 @@ so that it can be restored."
   
   "Save the location of point when project buffer is closed."
   
-  (when projectIDE-enable-session
+  (when (and projectIDE-enable-session
+             (not (string= (car-safe (projectIDE-get-module-var (projectIDE-get-Btrace-signature) 'projectIDE-session)) "f")))
     (let* ((signature (projectIDE-get-Btrace-signature))
            (record (and signature
                         (projectIDE-get-module-persist-memory signature 'projectIDE-session))))
@@ -117,7 +118,8 @@ so that it can be restored."
 
   "Restore the location of point when project buffer is opened."
   
-  (when projectIDE-enable-session
+  (when (and projectIDE-enable-session
+             (not (string= (car-safe (projectIDE-get-module-var (projectIDE-get-Btrace-signature) 'projectIDE-session)) "f")))
     (let* ((signature (projectIDE-get-Btrace-signature))
            (record (and signature
                         (projectIDE-get-module-persist-memory signature 'projectIDE-session)))

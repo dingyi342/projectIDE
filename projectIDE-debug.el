@@ -120,25 +120,6 @@ Descrip.:\t The list of function calling this function."
     (list ,current)
     (and projectIDE-debug-mode ,caller)))
 
-(defun projectIDE-print-variable (var)
-  "Insert VAR at bottom of current buffer.
-Only for debug purpose."
-  (goto-char (point-max))
-  (insert "\n\n")
-  (let ((beg (point)))
-    (save-excursion (insert (pp var))
-                    (comment-region beg (point))))
-  (message "Done"))
-
-(defun pdm (&rest args)
-  "Stand for print debug message."
-  (if args
-      (progn
-        (message "[projectIDE::Debug] This is the start or projectIDE-debug.")
-        (dolist (arg args)(pp arg))
-        (message "[projectIDE::Debug] This is the end or projectIDE-debug."))
-    (message "[projectIDE::Debug] This is a projectIDE debug message~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")))
-
 (defun projectIDE-debug-mode-on ()
   "An interative function to turn on debug mode.
 Debug mode only print extra infomation to log file."

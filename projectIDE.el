@@ -36,6 +36,7 @@
 (require 'projectIDE-debug)
 (require 'projectIDE-fstream)
 (require 'projectIDE-module)
+(require 'projectIDE-modeline)
 (require 'projectIDE-session)
 
 ;;; Config file function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -175,9 +176,9 @@ Descrip.:\t Function list calling this function for debug purpose."
                                                                  (projectIDE-caller 'projectIDE-parse-config caller))
                                       (throw 'parse-error nil))))
                               (name (concat scope (and scope "-")
-                                     (string-remove-suffix "="
-                                      (projectIDE-trim-string
-                                       (buffer-substring-no-properties (line-beginning-position) (point)))))))
+                                            (projectIDE-trim-string
+                                             (string-remove-suffix "="
+                                                                   (buffer-substring-no-properties (line-beginning-position) (point)))))))
                           (setq module-var (plist-put module-var (intern name) var))
                           (setf (projectIDE-project-module-var project) module-var)))
                         
@@ -867,7 +868,7 @@ Descrip.:\t Function list calling this function for debug purpose."
   "Update cache of current buffer in background by one step."
   
   (catch 'quit
-    (let ((signature (projectIDE-get-Btrace-signature))
+    (let ((signature projectIDE-active-project)
           state
           cache
           filehash)
@@ -924,7 +925,7 @@ In simple term, it updates folders and files of the project."
                                  (projectIDE-caller 'projectIDE-update-cache))
       (throw 'Error nil))
     
-    (let ((signature (projectIDE-get-Btrace-signature)))
+    (let ((signature projectIDE-active-project))
       (unless signature
         (projectIDE-message 'Warning
                                    "Current buffer not in project record."
@@ -1128,7 +1129,7 @@ Example:\t ((\"foo\" \"bar\")
 \t\t\t (\"path-of-foo\" \"path-of-bar\")
 \t\t\t (\"signature-of-foo\" \"signature-of-bar\"))"
   
-  (let ((signatures (projectIDE-get-all-singatures))
+  (let ((signatures (projectIDE-get-all-signatures))
         paths
         names)
       (setq signatures (sort signatures (lambda (record1 record2) (time-less-p (projectIDE-get-project-last-open record1)
@@ -1325,15 +1326,15 @@ When OTHERWINDOW is provided, the folder will be open on other window."
       ;; When prefixed, open folder from all current opened project.
       (if (not (= prefix 1))
           (setq sources (projectIDE-get-all-caching-signature))
-        (setq sources (list (projectIDE-get-Btrace-signature (current-buffer))))
+        (setq sources (list projectIDE-active-project))
         (unless (car sources)
           (setq sources (projectIDE-get-all-caching-signature))))
       
       (unless (car sources)
         (projectIDE-message 'Warning
-                                   "Current buffer is not an indexed project."
-                                   t
-                                   (projectIDE-caller 'projectIDE-open-folder))
+                            "Current buffer is not an indexed project."
+                            t
+                            (projectIDE-caller 'projectIDE-open-folder))
         (throw 'Error nil))
       
       ;; Determined if project prefix should be used
@@ -1454,7 +1455,7 @@ When OTHERWINDOW is provided, the file will be open on other window."
       ;; When prefixed, open file from all current opened project.
       (if (not (= prefix 1))
           (setq sources (projectIDE-get-all-caching-signature))
-        (setq sources (list (projectIDE-get-Btrace-signature (current-buffer))))
+        (setq sources (list projectIDE-active-project))
         (unless (car sources)
           (setq sources (projectIDE-get-all-caching-signature))))
       
@@ -1664,7 +1665,6 @@ If PREFIX is provided, switch to buffer of all opened project."
    (let (signature buffers choice)
     (when (= prefix 1)
       (setq signature (projectIDE-get-Btrace-signature)))
-    (pdm signature)
     (setq buffers (mapcar 'buffer-name (projectIDE-get-buffer-list signature)))
     (unless buffers
       (projectIDE-message 'Info
@@ -1879,6 +1879,9 @@ If PREFIX is provided, switch to buffer of all opened project."
           (let ((buffers (buffer-list)))
             (dolist (buffer buffers)
               (projectIDE-identify-project buffer (projectIDE-caller 'projectIDE-initialize))))
+
+          (when projectIDE-enable-project-mode-line
+           (setq-default mode-line-buffer-identification projectIDE-mode-line-buffer-identification))
           
           (run-hooks 'projectIDE-initialize-hook))
       
@@ -1900,6 +1903,7 @@ If PREFIX is provided, switch to buffer of all opened project."
       (cancel-timer projectIDE-timer-primary))
     (when projectIDE-timer-idle
       (cancel-timer projectIDE-timer-idle))
+    (setq-default mode-line-buffer-identification projectIDE-mode-line-buffer-identification-failback)
     (projectIDE-mode 0)
     (remove-hook 'find-file-hook 'projectIDE-identify-project)
     (remove-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)

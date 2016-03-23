@@ -62,6 +62,9 @@
 ;;fff (defun projectIDE-append (list1 list2))
 ;;fff (defun projectIDE-manipulate-filter (projectRoot list))
 ;;fff (defun projectIDE-prompt (prompt choices &optional initial-input))
+;;fff (defun projectIDE-read-file-name (prompt &optional dir default-filename mustmatch initial predicate))
+;;fff (defun projectIDE-read-directory-name (prompt &optional dir default-dirname mustmatch initial))
+;;fff (defun projectIDE-dired (dirname &optional switches))
 
 (defun projectIDE-concat-regexp (list)
   
@@ -458,7 +461,18 @@ above 127 (such as ISO Latin-1) can be included if you use a vector."
 ;;vvv (defconst PROJECTIDE-RECORD-FILE)
 ;;vvv (defconst PROJECTIDE-LOG-PATH)
 ;;vvv (defconst PROJECTIDE-CACHE-PATH)
-;;vvv (defcustom projectIDE-completion-system)
+;;vvv (defcustom projectIDE-auto-initialize-p)
+;;vvv (defcustom projectIDE-initialize-hook)
+;;vvv (defcustom projectIDE-terminate-hook)
+;;vvv (defcustom projectIDE-open-project-buffer-hook)
+;;vvv (defcustom projectIDE-kill-project-buffer-hook)
+;;vvv (defcustom projectIDE-open-project-hook)
+;;vvv (defcustom projectIDE-close-project-hook)
+;;vvv (defcustom projectIDE-prompt-function)
+;;vvv (defcustom projectIDE-read-file-name-function)
+;;vvv (defcustom projectIDE-read-directory-name-function)
+;;vvv (defcustom projectIDE-dired-function)
+;;vvv (defcustom projectIDE-enable-background-service)
 
 (defcustom projectIDE-database-path
   (expand-file-name
@@ -581,9 +595,11 @@ See `completing-read' for details."
 
 
 
+
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Project config file variable
-;;vvv (defconst projectIDE-default-config-key)
+;;vvv (defconst projectIDE-config-key)
+;;vvv (defvar projectIDE-config-key-string)
 ;;vvv (defconst projectIDE-CACHEMODE-open-project-update-cache)
 ;;vvv (defconst projectIDE-CACHEMODE-background-update-cache)
 ;;vvv (defconst projectIDE-CACHEMODE-update-cache-pre-prompt)
@@ -660,7 +676,7 @@ A sum of these cache modes you want to enable."
 
 (defcustom projectIDE-default-whitelist nil
     "A list of exclude items by projectIDE."
-  :group 'projecIDE-config-file
+  :group 'projectIDE-config-file
   :type '(repeat string))
 
 (defcustom projectIDE-config-file-search-up-level 4
@@ -1078,19 +1094,19 @@ Never attempt to modify it directly.")
   )
 
 ;;; Getter and setter function
-;;fff (defun projectIDE-get-all-singatures ())
+;;fff (defun projectIDE-get-all-signatures ())
 ;;fff (defun projectIDE-get-all-records ())
 ;;fff (defun projectIDE-get-record (signature))
 ;;fff (defun projectIDE-get-signature-by-path (path &optional caller))
 ;;fff (defun projectIDE-get-project-name (signature))
 ;;fff (defun projectIDE-get-project-path (signature))
+;;fff (defun projectIDE-get-config-file-path (signature))
 ;;fff (defun projectIDE-get-project-create-time (signature))
 ;;fff (defun projectIDE-get-project-last-open (signature))
 ;;fff (defun projectIDE-set-project-name (signature name))
-;;fff (defun projectIDE-set-project-path (signature path))
 ;;fff (defun projectIDE-set-project-last-open (signature))
 
-(defun projectIDE-get-all-singatures ()
+(defun projectIDE-get-all-signatures ()
   
   "Get a list of all signatures found in projectIDE-runtime-record.
 
@@ -1292,28 +1308,6 @@ Descrip.:\t A project based unique ID."
 
 
 
-(defun projectIDE-set-project-path (signature path)
-  
-  "Set the project PATH of given SIGNATURE in projectIDE-runtime-record.
-
-Return
-Descrip.:\t nil if there is problem setting the path.
-
-NAME
-Type:\t\t string
-Descrip.:\t project path
-
-SIGNATURE
-Type:\t\t string
-Descrip.:\t A project based unique ID."
-
-  (let ((record (gethash signature projectIDE-runtime-record)))
-    (if (projectIDE-record-p record)
-        (setf (projectIDE-record-path record) path)
-      nil)))
-
-
-
 (defun projectIDE-set-project-last-open (signature)
   
   "Set the project last opened time given by SIGNATURE to current time.
@@ -1401,23 +1395,23 @@ Descrip.:\t A project based unique ID."
 ;;fff (defun projectIDE-get-cache-exclude (signature))
 ;;fff (defun projectIDE-get-cache-whitelist (signature))
 ;;fff (defun projectIDE-get-cachemode (signature))
+;;fff (defun projectIDE-get-file-cache-state (signature))
 ;;fff (defun projectIDE-background-update-cache? (signature))
 ;;fff (defun projectIDE-open-project-update-cache? (signature))
 ;;fff (defun projectIDE-important-cmd-update-cache? (signature))
 ;;fff (defun projectIDE-pre-prompt-update-cache? (signature))
 ;;fff (defun projectIDE-generate-association? (signature))
-;;fff (defun projectIDE-get-file-cache-state (signature))
 ;;fff (defun projectIDE-get-file-cache (signature))
 ;;fff (defun projectIDE-get-opened-buffer (signature))
 ;;fff (defun projectIDE-get-file-association (&optional buffer))
 ;;fff (defun projectIDE-get-file-association-state (&optional buffer))
 ;;fff (defun projectIDE-get-modules (signature))
+;;fff (defun projectIDE-get-module-var (signature var))
 ;;fff (defun projectIDE-push-cache (signature cache))
 ;;fff (defun projectIDE-pop-cache (signature))
 ;;fff (defun projectIDE-set-cache-project (signature project))
 ;;fff (defun projectIDE-set-cache-filter (signature))
 ;;fff (defun projectIDE-set-file-cache-state (signature))
-;;fff (defun projectIDE-unset-file-cache-state (signature))
 ;;fff (defun projectIDE-set-file-cache (signature))
 ;;fff (defun projectIDE-add-opened-buffer (signature file))
 ;;fff (defun projectIDE-remove-opened-buffer (signature file))

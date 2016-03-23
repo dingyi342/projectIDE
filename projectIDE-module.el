@@ -61,8 +61,8 @@ See `projectIDE-advice-buffer-change' for details."
 
   ;; don't run on temp buffer
   (unless (string-match "\\*.*\\*" (buffer-name (current-buffer)))
+    (setq projectIDE-active-project (projectIDE-get-Btrace-signature))
     (let ((diff (projectIDE-module-diff (projectIDE-get-Btrace-signature))))
-      (setq projectIDE-active-project (projectIDE-get-Btrace-signature))
       (dolist (plus (car diff))
         (projectIDE-activate-module plus))
       (dolist (minus (cdr diff))
@@ -85,7 +85,6 @@ Descrip.:\t Symbol of the module name."
   (let ((initializer (intern (concat (symbol-name name) "-initialize"))))
     (when (projectIDE-get-function-object initializer)
       (projectIDE-realize-function initializer)
-      (pdm initializer)
       (funcall initializer)))
   (setq projectIDE-current-loading-module nil))
 
