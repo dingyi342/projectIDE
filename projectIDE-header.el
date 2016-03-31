@@ -187,9 +187,7 @@ Descip.:\t A string list which each entry is to be prefixed."
   (let (return)
     (dolist (entry list)
       (cl-pushnew (concat projectRoot
-                          (replace-regexp-in-string "\\*" ".*"
-                                                    (replace-regexp-in-string "\\." "\\\\." entry))
-                          "\\'")
+                          (wildcard-to-regexp entry))
                   return
                   :test 'equal))
     (projectIDE-concat-regexp return)))
@@ -427,6 +425,11 @@ above 127 (such as ISO Latin-1) can be included if you use a vector."
   :tag "Project module"
   :group 'projectIDE)
 
+(defgroup projectIDE-face nil
+  "Face for projectIDE"
+  :tag "projectIDE face"
+  :group 'projectIDE)
+
 (defgroup projectIDE-hook nil
   "All available projectIDE hooks."
   :tag "Hook"
@@ -542,6 +545,13 @@ above 127 (such as ISO Latin-1) can be included if you use a vector."
 (defcustom projectIDE-close-project-hook nil
   "Hooks run just before the last buffer of project was closed."
   :tag "projectIDE-close-project-hook"
+  :type 'hook
+  :group 'projectIDE-global
+  :group 'projectIDE-hook)
+
+(defcustom projectIDE-config-updated-hook nil
+  "Hooks run after projectIDE config file has been updated."
+  :tag "projectIDE-config-updated-hook"
   :type 'hook
   :group 'projectIDE-global
   :group 'projectIDE-hook)
@@ -1191,7 +1201,7 @@ Descript.:\t File or folder path in string."
 
 Return
 Type:\t\t string or nil
-Descrip.:\t\t Name of project of the given signature.
+Descrip.:\t Name of project of the given signature.
 \t\t\t Return nil if there is problem getting project name.
 
 SIGNATURE
@@ -2214,14 +2224,17 @@ Descrip.:\t If buffer is not provided, current buffer is used."
   "File path to `projectIDE-hard-memory'.")
 
 (defvar projectIDE-runtime-modules nil
+  ;; plist
   "Store and manage modules.
 Never attempt to modify it directly.")
 
 (defvar projectIDE-runtime-functions nil
+  ;; hashtable
   "Store and manage project specific functions.
 Never attempt to modify it directly.")
 
 (defvar projectIDE-key-table nil
+  ;; plist
   "Store keymap for modules.
 Never attempt to modify it directly.")
 
@@ -2240,11 +2253,20 @@ It should be always nil when checking for it.
 Because it store a idle timer with 0 second.
 Never attempt to modify it directly.")
 
+(defvar projectIDE-module-garbage-collect-timer nil
+  "Store the timer for garbage collecting unreferenced module.
+Never attempt to modify it directly.")
+
+(defcustom projectIDE-module-garbage-collect-time (* 12 60 60)
+  "The time for garbage collecting unreferenced modules."
+  :tag "Time to garbage collecting module"
+  :type 'integer
+  :group 'projectIDE-module)
+
 (cl-defstruct projectIDE-module
   name
   functions
   signatures
-  closetime
   )
 
 (cl-defstruct projectIDE-function
@@ -2255,46 +2277,6 @@ Never attempt to modify it directly.")
   body
   key
   )
-
-
-
-(defun projectIDE-get-function-key (function)
-  
-  "Return the keybind for FUNCTION.
-
-Return
-Type:\t\t internal Emacs key representation or nil
-Descrip.:\t\t Project specific keybind for FUNCTION.
-\t\t\t Return nil if no keybind found."
-  
-  (plist-get projectIDE-key-table function))
-
-
-
-(defun projectIDE-add-module-signature (module signature)
-
-  "Add to MODULE with SIGNATURE TO INDICATE THAT
-MODULE IS IN USE BY PROJECT GIVEN BY SIGNATURE.
-
-RETURN
-Type:\T\T BOOL
-Descrip.:\T RETURN T IF SIGNATURE is added to MODULE successfully.
-\t\t\t Otherwise, return nil.
- 
-MODULE
-Type:\t\t symbol
-Descrip.:\t Name of the module.
-
-SIGNATURE
-Type:\t\t string
-Descrip.:\t A project based unique ID."
-  
-  (let ((module (plist-get projectIDE-runtime-modules module)))
-    (if module
-        (progn
-          (cl-pushnew signature (projectIDE-module-signatures module) :test 'equal)
-          t)
-      nil)))
 
 
 
@@ -2406,79 +2388,130 @@ instead of defining it directly.
 
 The function defined by `projectIDE-defun' will be managed by projectIDE."
   
-  (projectIDE-register projectIDE-current-loading-module name)
-  (puthash
-   name
-   (make-projectIDE-function :name name
-                             :type 'defun
-                             :args args
-                             :docstring (and (stringp (car body)) (car body))
-                             :body (or (and (stringp (car body)) (cdr body)) body)
-                             :key (plist-get projectIDE-key-table 'name))
-   projectIDE-runtime-functions))
+  `(progn
+     (projectIDE-register projectIDE-current-loading-module  ',name)
+     (puthash
+      ',name
+      (make-projectIDE-function :name ',name
+                                :type 'defun
+                                :args ',args
+                                :docstring ,(and (stringp (car body)) (car body))
+                                :body ',(or (and (stringp (car body)) (cdr body)) body)
+                                :key (plist-get projectIDE-key-table ',name))
+      projectIDE-runtime-functions)))
 
 
 
 (defmacro projectIDE-cl-defun (name args &rest body)
   
-    "A wrapper to `cl-defun' that put the function in `projectIDE-runtime-functions'
+  "A wrapper to `cl-defun' that put the function in `projectIDE-runtime-functions'
 instead of defining it directly.
 
 The function defined by `projectIDE-cl-defun' will be managed by projectIDE."
-    
-  (projectIDE-register projectIDE-current-loading-module name)
-  (puthash
-   name
-   (make-projectIDE-function :name name
-                             :type 'cl-defun
-                             :args args
-                             :docstring (and (stringp (car body)) (car body))
-                             :body (or (and (stringp (car body)) (cdr body)) body)
-                             :key (plist-get projectIDE-key-table 'name))
-   projectIDE-runtime-functions))
+  
+  `(progn
+     (projectIDE-register projectIDE-current-loading-module ',name)
+     (puthash
+      ',name
+      (make-projectIDE-function :name ',name
+                                :type 'cl-defun
+                                :args ',args
+                                :docstring ,(and (stringp (car body)) (car body))
+                                :body ',(or (and (stringp (car body)) (cdr body)) body)
+                                :key (plist-get projectIDE-key-table ',name))
+      projectIDE-runtime-functions)))
 
 
 
 (defmacro projectIDE-defmacro (name args &rest body)
 
-    "A wrapper to `defmacro' that put the function in `projectIDE-runtime-functions'
+  "A wrapper to `defmacro' that put the function in `projectIDE-runtime-functions'
 instead of defining it directly.
 
 The function defined by `projectIDE-defmacro' will be managed by projectIDE."
-    
-  (projectIDE-register projectIDE-current-loading-module name)
-  (puthash
-   name
-   (make-projectIDE-function :name name
-                             :type 'defmacro
-                             :args args
-                             :docstring (and (stringp (car body)) (car body))
-                             :body (or (and (stringp (car body)) (cdr body)) body)
-                             :key (plist-get projectIDE-key-table 'name))
-   projectIDE-runtime-functions))
+
+  `(progn
+    (projectIDE-register projectIDE-current-loading-module ',name)
+    (puthash
+     ',name
+     (make-projectIDE-function :name ',name
+                               :type 'defmacro
+                               :args ',args
+                               :docstring ,(and (stringp (car body)) (car body))
+                               :body ',(or (and (stringp (car body)) (cdr body)) body)
+                               :key (plist-get projectIDE-key-table ',name))
+     projectIDE-runtime-functions)))
 
 (defmacro projectIDE-cl-defmacro (name args &rest body)
-    
-    "A wrapper to `cl-defmarco' that put the function in `projectIDE-runtime-functions'
+  
+  "A wrapper to `cl-defmarco' that put the function in `projectIDE-runtime-functions'
 instead of defining it directly.
 
 The function defined by `projectIDE-cl-defmarco' will be managed by projectIDE."
-    
-  (projectIDE-register projectIDE-current-loading-module name)
-  (puthash
-   name
-   (make-projectIDE-function :name name
-                             :type 'cl-defmacro
-                             :args args
-                             :docstring (and (stringp (car body)) (car body))
-                             :body (or (and (stringp (car body)) (cdr body)) body)
-                             :key (plist-get projectIDE-key-table 'name))
-   projectIDE-runtime-functions))
+
+  `(progn
+     (projectIDE-register projectIDE-current-loading-module ',name)
+     (puthash
+      ',name
+      (make-projectIDE-function :name ',name
+                                :type 'cl-defmacro
+                                :args ',args
+                                :docstring ,(and (stringp (car body)) (car body))
+                                :body ',(or (and (stringp (car body)) (cdr body)) body)
+                                :key (plist-get projectIDE-key-table ',name))
+      projectIDE-runtime-functions)))
 
 
 
 ;;; Getter and setter functions
 ;;fff (defun projectIDE-get-all-functions-from-module (name))
+
+(defun projectIDE-add-module-signature (module signature)
+
+  "Add to MODULE with SIGNATURE to indicate that
+module is in use by project given by SIGNATURE.
+ 
+MODULE
+Type:\t\t symbol
+Descrip.:\t Name of the module.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+
+  (let ((module (plist-get projectIDE-runtime-modules module)))
+    (if module
+        (progn
+          (cl-pushnew signature (projectIDE-module-signatures module) :test 'equal)
+          t)
+      nil)))
+
+
+
+(defun projectIDE-remove-module-signature (module signature)
+
+  "Remove SIGNATURE from MODULE to indicate that
+module is no longer in use by project given by SIGNATURE.
+
+Return
+Type:\T\T bool
+Descrip.:\T return t if SIGNATURE is added to MODULE successfully.
+\t\t\t Otherwise, return nil.
+ 
+MODULE
+Type:\t\t symbol
+Descrip.:\t Name of the module.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+  
+  (let ((module (plist-get projectIDE-runtime-modules module)))
+    (when module
+      (setf (projectIDE-module-signatures module)
+            (cl-remove signature (projectIDE-module-signatures module) :test 'equal)))))
+
+
 
 (defun projectIDE-get-all-functions-from-module (name)
   
@@ -2519,7 +2552,6 @@ Descrip.:\t\t Name of function."
 
 
 
-
 (defun projectIDE-get-function-object-type (name)
 
   "Return the type of defing of function given by NAME
@@ -2539,6 +2571,18 @@ Descrip.:\t\t Name of function."
   (let* ((function (gethash name projectIDE-runtime-functions))
          (type (and (projectIDE-function-p function) (projectIDE-function-type function))))
     type))
+
+
+(defun projectIDE-get-function-key (function)
+  
+  "Return the keybind for FUNCTION.
+
+Return
+Type:\t\t internal Emacs key representation or nil
+Descrip.:\t\t Project specific keybind for FUNCTION.
+\t\t\t Return nil if no keybind found."
+  
+  (plist-get projectIDE-key-table function))
 
 ;; projectIDE module endls
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

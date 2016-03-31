@@ -38,6 +38,8 @@
 (require 'projectIDE-module)
 (require 'projectIDE-modeline)
 (require 'projectIDE-session)
+(require 'projectIDE-compile)
+(require 'projectIDE-scriptloader)
 
 ;;; Config file function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;fff (defun projectIDE-parse-config (file &optional errormessage caller))
@@ -234,11 +236,11 @@ Descrip:\t Prompt for a config file if it is provided."
     ;; Try to prompt for a config file
     (when (and prefix (not (= prefix 1)))
       (setq config (expand-file-name
-                    (read-file-name "Choose config: " nil nil t nil
-                                    (lambda (file)
-                                      (or
-                                       (file-directory-p file)
-                                       (equal (file-name-nondirectory file) PROJECTIDE-PROJECTROOT-IDENTIFIER))))))
+                    (projectIDE-read-file-name "Choose config: " nil nil t nil
+                                               (lambda (file)
+                                                 (or
+                                                  (file-directory-p file)
+                                                  (equal (file-name-nondirectory file) PROJECTIDE-PROJECTROOT-IDENTIFIER))))))
       (when (file-directory-p config)
         (setq config nil)))
 
@@ -573,7 +575,6 @@ Descrip.:\t Function list calling this function for debug purpose."
     ;; update the last-open time of project record
     (when signature
       (projectIDE-track-buffer signature buffer (projectIDE-caller 'projectIDE-identify-project (or caller '(find-file-hook))))
-      (run-hooks 'projectIDE-open-project-buffer-hook)
       (unless buffer
         (projectIDE-message
          'Info
@@ -848,7 +849,7 @@ Descrip.:\t Function list calling this function for debug purpose."
                                    nil
                                    (projectIDE-caller 'projectIDE-update-cache-backend caller))
         (throw 'Error nil))
-      (projectIDE-load-all-modules signature))
+      (run-hooks 'projectIDE-config-updated-hook))
     
     (when (projectIDE-filter-changed? signature (projectIDE-caller 'projectIDE-update-cache-backend caller))
       (projectIDE-set-cache-filter signature)
@@ -879,7 +880,7 @@ Descrip.:\t Function list calling this function for debug purpose."
 
         (when (projectIDE-config-need-update? signature (projectIDE-caller 'projectIDE-background-update-cache))
           (projectIDE-update-project-config signature nil (projectIDE-caller 'projectIDE-background-update-cache))
-          (projectIDE-load-all-modules signature))
+          (run-hooks 'projectIDE-config-updated-hook))
 
         (setq state (projectIDE-get-file-cache-state signature))
       
@@ -970,7 +971,7 @@ Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
   
   (projectIDE-push-Btrace signature buffer)
-      
+  
   (unless (projectIDE-get-cache signature)
     (let (cache)
       (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer caller))
@@ -983,11 +984,12 @@ Descrip.:\t Function list calling this function for debug purpose."
         (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-track-buffer caller))
       (projectIDE-set-file-cache-state signature 0))
 
-    (projectIDE-load-all-modules signature)
+    (setq projectIDE-active-project signature)
     (run-hooks 'projectIDE-open-project-hook))
   
   (projectIDE-add-opened-buffer signature (buffer-file-name buffer))
-  (projectIDE-set-project-last-open signature))
+  (projectIDE-set-project-last-open signature)
+  (run-hooks 'projectIDE-open-project-buffer-hook))
 
 
 
@@ -1020,13 +1022,14 @@ Descrip.:\t Function list calling this function for debug purpose."
  (let ((signature (projectIDE-get-Btrace-signature buffer)))
    (when signature
      (run-hooks 'projectIDE-kill-project-buffer-hook)
-     (projectIDE-pop-Btrace buffer)
-      
+           
       (when (projectIDE-get-cache signature)
         (if (> (length (projectIDE-get-opened-buffer signature)) 1)
             (projectIDE-remove-opened-buffer signature (buffer-file-name buffer))
           (run-hooks 'projectIDE-close-project-hook)
-          (projectIDE-pop-cache signature))))))
+          (projectIDE-pop-cache signature)))
+
+      (projectIDE-pop-Btrace buffer))))
 
 
 
@@ -1069,9 +1072,9 @@ This function is designed to advice before `save-buffers-kill-emacs'."
       (let ((cache (projectIDE-get-cache signature)))
         (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer '(save-buffers-kill-emacs))))))
   (setq projectIDE-write-out-cache nil)
+  (save-some-buffers nil t)
   (dolist (buffer (projectIDE-get-buffer-list))
     (kill-buffer buffer))
-  (setq projectIDE-write-out-cache t)
   (projectIDE-terminate))
 
 ;; Caching function ends ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1109,6 +1112,8 @@ This function is designed to advice before `save-buffers-kill-emacs'."
 ;;fff (defun projectIDE-switch-association (prefix)) -I
 ;;fff (defun projectIDE-switch-association-other-window (prefix)) - I
 ;;fff (defun projectIDE-close-project ()) -I
+;;fff (defun projectIDE-switch-project-buffer (prefix)) -I
+;;fff (defun projectIDE-open-config-file ()) -I
 
 (defun projectIDE-get-project-list ()
   
@@ -1246,7 +1251,9 @@ Descrip.:\t Function list calling this function for debug purpose."
           (dolist (file opened-buffer)
             (when (file-readable-p file)
               (find-file file)))
-        (dired projectRoot)))))
+        (projectIDE-dired projectRoot))
+      (unless (equal (projectIDE-get-Btrace-signature) signature)
+        (projectIDE-dired projectRoot)))))
 
 
 
@@ -1676,6 +1683,32 @@ If PREFIX is provided, switch to buffer of all opened project."
     (setq choice (projectIDE-prompt "Choose buffer: " buffers))
     (switch-to-buffer (get-buffer (buffer-name choice))))))
 
+
+
+(defun projectIDE-open-config-file ()
+
+  "An interactive funciton to open config file of current project."
+
+  (interactive)
+
+  (catch 'Error
+    (unless (projectIDE-get-Btrace-signature)
+      (projectIDE-message 'Info
+                          "Current buffer is not a projectIDE project."
+                          t
+                          (projectIDE-caller 'projectIDE-open-config-file))
+      (throw 'Error nil))
+
+    (let ((configfile (projectIDE-get-config-file-path (projectIDE-get-Btrace-signature))))
+      (unless (file-exists-p configfile)
+        (projectIDE-message 'Warning
+                            (format "Config file %s not found." configfile)
+                            t
+                            (projectIDE-caller 'projectIDE-open-config-file))
+      (throw 'Error nil))
+          
+      (find-file configfile))))
+
 ;;; Fetching data function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -1794,7 +1827,7 @@ If PREFIX is provided, switch to buffer of all opened project."
 
 
 
-(defun projectIDE-timer-function ()
+(defun projectIDE-backgrounde-update-timer ()
 
   "A timer function to control background update cache."
   
@@ -1805,7 +1838,7 @@ If PREFIX is provided, switch to buffer of all opened project."
         (run-with-idle-timer (time-add (or (current-idle-time) '(0 0 0 0))
                                     (seconds-to-time projectIDE-update-cache-interval))
          nil
-         'projectIDE-timer-function)))
+         'projectIDE-backgrounde-update-timer)))
 
 
 
@@ -1817,9 +1850,9 @@ If PREFIX is provided, switch to buffer of all opened project."
   (catch 'Error
     (when projectIDE-p
       (projectIDE-message 'Warning
-                                 "projectIDE has already initialized."
-                                 nil
-                                 (projectIDE-caller 'projectIDE-initialize))
+                          "projectIDE has already initialized."
+                          nil
+                          (projectIDE-caller 'projectIDE-initialize))
       (throw 'Error nil))
     
     ;; Check whether projectIDE database folder exist
@@ -1837,10 +1870,7 @@ If PREFIX is provided, switch to buffer of all opened project."
     ;; Check log folder exist
     (unless (file-exists-p PROJECTIDE-LOG-PATH)
       (make-directory PROJECTIDE-LOG-PATH))
-    ;; Check module folder exist
-    (unless (file-exists-p PROJECTIDE-MODULE-CACHE-PATH)
-      (make-directory PROJECTIDE-MODULE-CACHE-PATH))
-    
+        
     (if (and (fin>>projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record)
              (fin>>projectIDE PROJECTIDE-PERSIST-MEMORY-FILE 'projectIDE-persist-memory))
         (progn
@@ -1850,28 +1880,24 @@ If PREFIX is provided, switch to buffer of all opened project."
             (setq projectIDE-persist-memory (make-hash-table :test 'eq :size 100)))
           (setq projectIDE-runtime-cache (make-hash-table :test 'equal :size 20)
                 projectIDE-runtime-Btrace (make-hash-table :test 'eq :size 40)
-                projectIDE-runtime-functions (make-hash-table :test 'eq :size 100)
                 projectIDE-non-persist-memory (make-hash-table :test 'eq :size 100))
           (projectIDE-message 'Info
-                                     "projectIDE starts successfully."
-                                     t
-                                     (projectIDE-caller 'projectIDE-initialize))
+                              "projectIDE starts successfully."
+                              t
+                              (projectIDE-caller 'projectIDE-initialize))
 
           (add-hook 'find-file-hook 'projectIDE-identify-project)
           (add-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
-          ;; advice set-buffer is better than switch-to-buffer in terms of performance
-          (advice-add 'set-buffer :after 'projectIDE-advice-buffer-change)
-          (advice-add 'save-buffers-kill-emacs :before #'projectIDE-before-emacs-kill)
+          (advice-add 'save-buffers-kill-emacs :before 'projectIDE-before-emacs-kill)
           (add-hook 'before-save-hook 'projectIDE-before-save-new-file)
           (add-hook 'after-save-hook 'projectIDE-after-save-new-file)
-          (advice-add 'kill-buffer :after 'projectIDE-advice-buffer-change)
-          
+                    
           (add-to-list 'auto-mode-alist '("\\.projectIDE\\'" . projectIDE-config-mode))
 
           ;; Two timers are set
           (when projectIDE-enable-background-service
-            (setq projectIDE-timer-primary (run-with-idle-timer projectIDE-update-cache-interval t 'projectIDE-timer-function))
-            (projectIDE-timer-function))
+            (setq projectIDE-timer-primary (run-with-idle-timer projectIDE-update-cache-interval t 'projectIDE-backgrounde-update-timer))
+            (projectIDE-backgrounde-update-timer))
           
           (setq projectIDE-p t)
           (projectIDE-mode 1)
@@ -1881,14 +1907,16 @@ If PREFIX is provided, switch to buffer of all opened project."
               (projectIDE-identify-project buffer (projectIDE-caller 'projectIDE-initialize))))
 
           (when projectIDE-enable-project-mode-line
-           (setq-default mode-line-buffer-identification projectIDE-mode-line-buffer-identification))
-          
+            (setq-default mode-line-buffer-identification projectIDE-mode-line-buffer-identification))
+
+          (projectIDE-module-initialize)
+          (projectIDE-session-initialize)
           (run-hooks 'projectIDE-initialize-hook))
       
       (projectIDE-message 'Error
-                                 (format "projectIDE starts fail. Unable to read record file at %s" PROJECTIDE-RECORD-FILE)
-                                 t
-                                 (projectIDE-caller 'projectIDE-initialize)))
+                          (format "projectIDE starts fail. Unable to read record file at %s" PROJECTIDE-RECORD-FILE)
+                          t
+                          (projectIDE-caller 'projectIDE-initialize)))
     projectIDE-p))
 
 
@@ -1898,6 +1926,8 @@ If PREFIX is provided, switch to buffer of all opened project."
   "Terminate projectIDE."
 
   (interactive)
+  (projectIDE-module-terminate)
+  (projectIDE-session-terminate)
   (when projectIDE-p
     (when projectIDE-timer-primary
       (cancel-timer projectIDE-timer-primary))
@@ -1907,11 +1937,9 @@ If PREFIX is provided, switch to buffer of all opened project."
     (projectIDE-mode 0)
     (remove-hook 'find-file-hook 'projectIDE-identify-project)
     (remove-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
-    (advice-remove 'set-buffer 'projectIDE-advice-buffer-change)
     (advice-remove 'save-buffers-kill-emacs  'projectIDE-before-emacs-kill)
     (remove-hook 'before-save-hook 'projectIDE-before-save-new-file)
     (remove-hook 'after-save-hook 'projectIDE-after-save-new-file)
-    (advice-remove 'kill-buffer 'projectIDE-advice-buffer-change)
     (setq projectIDE-runtime-record nil
           projectIDE-runtime-cache nil
           projectIDE-runtime-Btrace nil

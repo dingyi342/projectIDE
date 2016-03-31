@@ -28,7 +28,13 @@
 ;;; Commentary:
 ;;
 ;; This is part of projectIDE.el
-;; This file provides functions for developers.
+;; This file provides runtime debug functions for developers..
+;; Pay attention that this file must NOT be required by a package needs to be compiled.
+;; The macro in this file is uncompilable.
+;; They works for runtime expansion only.
+;; Besides, the naming tradition is not obeyed.
+;; This just provide a convinent, short named functions for debug/development.
+;; Personally, I use it in scrach.
 ;;
 ;;; Code:
 
@@ -42,26 +48,26 @@ Only for debug purpose."
                     (comment-region beg (point))))
   (message "Done"))
 
-(defmacro pm (&rest args)
-  "Print message."
+(defmacro pvm (&rest args)
+  "Print variable message."
   (if args
-      (progn
-        (message "[projectIDE::Debug] This is the start of debug message.\n")
-        (dolist (arg args)
-          (cond
-           ((stringp arg)
-            (pp arg))
-           ((numberp arg)
-            (pp arg))
-           ((boundp arg)
-            (pp arg)
-            (message "")
-            (pp (symbol-value arg)))
-           ((not (boundp arg))
-            (pp arg)
-            (message "Undefined")))
-          (message "\n"))
-        (message "[projectIDE::Debug] This is the end of debug message."))
+       (progn
+         (message "[projectIDE::Debug] This is the start of debug message.\n")
+         (dolist (arg args)
+           (cond
+            ((stringp arg)
+             (message (concat arg "\n")))
+            ((numberp arg)
+             (message (concat (number-to-string arg) "\n")))
+            ((listp arg)
+             (message (concat (number-to-string arg) "\n")))
+            ((boundp arg)
+             (message (concat (symbol-name arg) " :"))
+             (message (pp-to-string (symbol-value arg))))
+            ((boundp arg)
+             (message (concat (symbol-name arg) " :"))
+             (message "Undefined as a variable."))))
+         (message "[projectIDE::Debug] This is the end of debug message."))
     (message "[projectIDE::Debug] This is a projectIDE debug message~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")))
 
 (provide 'projectIDE-dev)

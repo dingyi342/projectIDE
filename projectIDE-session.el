@@ -37,7 +37,7 @@
 
 (defgroup projectIDE-session nil
   "Setting for projectIDE session."
-  :tag "Hook"
+  :tag "Session"
   :group 'projectIDE)
 
 (defcustom projectIDE-enable-session t
@@ -59,6 +59,9 @@ so that it can be restored."
   :type 'integer
   :group 'projectIDE-session)
 
+(defvar projectIDE-session-timer nil
+  "Store the timer of `projectIDE-session-timer-function'.
+Never attempt to modify it directly.")
 
 (cl-defstruct projectIDE-session
   point
@@ -70,47 +73,44 @@ so that it can be restored."
 (defun projectIDE-save-session ()
   
   "Save the location of point when project buffer is closed."
-  
   (when (and projectIDE-enable-session
              (not (string= (car-safe (projectIDE-get-module-var (projectIDE-get-Btrace-signature) 'projectIDE-session)) "f")))
     (let* ((signature (projectIDE-get-Btrace-signature))
-           (record (and signature
-                        (projectIDE-get-module-persist-memory signature 'projectIDE-session))))
+           (session-hash (and signature
+                              (projectIDE-get-module-persist-memory signature 'projectIDE-session))))
       
-      (unless record
-        (setq record (make-hash-table :test 'equal)))
+      (unless session-hash
+        (setq session-hash (make-hash-table :test 'equal)))
       
-      
-      (when (>= (hash-table-count record) projectIDE-session-limit)
+      (when (>= (hash-table-count session-hash) projectIDE-session-limit)
         (projectIDE-message 'Info
-                                   "Cleaning session cache ..."
-                                   t)
-        (let ((files (hash-table-keys record))
+                            "Cleaning session cache ..."
+                            t)
+        (let ((files (hash-table-keys session-hash))
               remove-files)
 
           (dolist (file files)
             (unless (file-exists-p file)
-              (remhash file record)))
+              (remhash file session-hash)))
 
-          (setq files (hash-table-keys record))
+          (setq files (hash-table-keys session-hash))
           (sort files (lambda (file1 file2)
                         (time-less-p
-                         (projectIDE-session-time (gethash file2 record))
-                         (projectIDE-session-time (gethash file1 record)))))
+                         (projectIDE-session-time (gethash file2 session-hash))
+                         (projectIDE-session-time (gethash file1 session-hash)))))
 
           (setq remove-files (subseq files (- projectIDE-session-limit projectIDE-session-reduce-number)))
           (dolist (file remove-files)
-            (remhash file record))))
-     
-     (puthash
-      (buffer-file-name)
-      (make-projectIDE-session :point (point)
-                               :word (word-at-point)
-                               :time (current-time))
-      record)
-     
-     (projectIDE-set-module-persist-memory signature 'projectIDE-session record))))
-
+            (remhash file session-hash))))
+      
+      (puthash
+       (buffer-file-name)
+       (make-projectIDE-session :point (point)
+                                :word (word-at-point)
+                                :time (current-time))
+       session-hash)
+      
+      (projectIDE-set-module-persist-memory signature 'projectIDE-session session-hash))))
 
 
 
@@ -118,25 +118,66 @@ so that it can be restored."
 
   "Restore the location of point when project buffer is opened."
   
-  (when (and projectIDE-enable-session
+    (when (and projectIDE-enable-session
              (not (string= (car-safe (projectIDE-get-module-var (projectIDE-get-Btrace-signature) 'projectIDE-session)) "f")))
     (let* ((signature (projectIDE-get-Btrace-signature))
-           (record (and signature
+           (session-hash (and signature
                         (projectIDE-get-module-persist-memory signature 'projectIDE-session)))
-           (session (and record (gethash (buffer-file-name) record))))
-
+           (session (and session-hash (gethash (buffer-file-name) session-hash))))
+      
       (when (projectIDE-session-p session)
         (when (<= (projectIDE-session-point session) (point-max))
           (goto-char (projectIDE-session-point session)))
         (if (equal (word-at-point) (projectIDE-session-word session))
-            (recenter)
+            (progn
+              (message (buffer-file-name))
+              (recenter))
           (goto-char (point-min)))))))
 
 
 
-(add-hook 'projectIDE-open-project-buffer-hook 'projectIDE-restore-session)
-(add-hook 'projectIDE-kill-project-buffer-hook 'projectIDE-save-session)
-(add-hook 'projectIDE-close-project-hook 'projectIDE-save-session)
+(defun projectIDE-keep-opened-buffer-order ()
+  
+  "Advice after `set-buffer' to maintain opened buffer order.
+But this is not add to advice directly.  Instead, it is encapsulated
+by a timer function and ther timer function is the function that
+actually advice after `set-buffer' so that `projectIDE-get-Btrace-signature'
+can get a correct signature."
+  
+  (when (and (projectIDE-get-Btrace-signature) projectIDE-enable-session)
+    (projectIDE-add-opened-buffer (projectIDE-get-Btrace-signature) (buffer-file-name)))
+  (setq projectIDE-session-timer nil))
+
+
+
+(defun projectIDE-session-timer-function (&rest args)
+
+  "Encapsulate `projectIDE-keep-opened-buffer-order' to a timer.
+Advice this function after `set-buffer'."
+  
+  (unless projectIDE-session-timer
+    (setq projectIDE-session-timer
+          (run-with-idle-timer 0 nil 'projectIDE-keep-opened-buffer-order))))
+
+
+
+(defun projectIDE-session-initialize ()
+
+  "Initialize projectIDE session."
+  
+  (add-hook 'projectIDE-open-project-buffer-hook 'projectIDE-restore-session)
+  (add-hook 'projectIDE-kill-project-buffer-hook 'projectIDE-save-session)
+  (advice-add 'set-buffer :after 'projectIDE-session-timer-function))
+
+
+
+(defun projectIDE-session-terminate ()
+
+  "Terminate projectIDE-session."
+
+  (remove-hook 'projectIDE-open-project-buffer-hook 'projectIDE-restore-session)
+  (remove-hook 'projectIDE-kill-project-buffer-hook 'projectIDE-save-session)
+  (advice-remove 'set-buffer 'projectIDE-session-timer-function))
 
 (provide 'projectIDE-session)
 ;;; projectIDE-session.el ends here

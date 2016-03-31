@@ -106,7 +106,7 @@ Descrip.:\t Function list calling this function for debug purpose."
 
            ;; Serialize and wirte data to file
            (with-temp-file file
-             (insert (prin1-to-string (symbol-value data))))
+             (prin1 (symbol-value data) (current-buffer)))
 
            (when (and projectIDE-debug-mode noError)
              (projectIDE-message 'Info
@@ -152,9 +152,10 @@ Descrip.:\t Function list calling this function for debug purpose."
     ;; Read from file
     (with-temp-buffer
       (insert-file-contents file)
+      (goto-char (point-min))
       (unless (equal (point-min) (point-max))
         (if (boundp symbol)
-            (set symbol (read (buffer-string)))
+            (set symbol (read (current-buffer)))
           (projectIDE-message 'Error
                                      (format "Symbol %s is undefined." (symbol-name symbol))
                                      nil

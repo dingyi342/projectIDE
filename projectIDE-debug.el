@@ -36,7 +36,34 @@
 ;;; Code:
 (require 'projectIDE-header)
 
+(defface projectIDE-info-message-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "#b4fa70")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "#b4fa70"))
+  "Face for displaying info message."
+  :group 'projectIDE-face)
+
+(defface projectIDE-warning-message-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "#fcaf3e")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "yellow"))
+  "Face for displaying warning message."
+  :group 'projectIDE-face)
+
+(defface projectIDE-error-message-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "firebrick1")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "firebrick1"))
+  "Face for displaying error message."
+  :group 'projectIDE-face)
+
+
+
 (defun projectIDE-message (type message &optional print functions)
+  
   "This funtion handle messages from projectIDE for debug purpose.
 TYPE specifies message type.  It can be 'Info, 'Warning or 'Error.
 Warning and Error message will be logged by default for debug purpose.
@@ -61,11 +88,11 @@ Descrip.:\t Display message to minibuffer if it is t.
 \t\t\t It is nil by default
 
 FUNCTION
-TYpe:\t\t symbol
+Type:\t\t symbol
 Descrip.: Function producing the message.  Just for debug purpose.
 
 FUNCTIONS
-TYpe:\t\t symbol list
+Type:\t\t symbol list
 Descrip.: Functions calling FUNCTION to produce the message.  Just for debug purpose."
   
   (let ((Day (format-time-string "%Y%m%d"))
@@ -74,13 +101,13 @@ Descrip.: Functions calling FUNCTION to produce the message.  Just for debug pur
         logtype)
     
     (cond ((eq type 'Error)
-           (setq message-prefix "[projectIDE::Error]")
+           (setq message-prefix (propertize "[projectIDE::Error]" 'face 'projectIDE-error-message-face))
            (setq logtype 3))
           ((eq type 'Warning)
-           (setq message-prefix "[projectIDE::Warning]")
+           (setq message-prefix (propertize "[projectIDE::Warning]" 'face 'projectIDE-warning-message-face))
            (setq logtype 2))
           (t
-           (setq message-prefix "[projectIDE::Info]")
+           (setq message-prefix (propertize "[projectIDE::Info]" 'face 'projectIDE-info-message-face))
            (setq logtype 1)))
 
     (setq projectIDE-last-message (concat message-prefix " " message))

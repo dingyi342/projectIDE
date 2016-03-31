@@ -152,16 +152,50 @@ Descrip.:\t Symbol of the module name."
 
 
 
-(defun projectIDE-load-all-modules (signature)
+(defun projectIDE-load-all-modules (&optional signature)
   
-  "Load module of project given by signature.
+  "Load all module of project given by signature.
+If SIGNATURE is not provided, use current active project instead.
 
 SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
+  (dolist (module (projectIDE-get-modules (or signature projectIDE-active-project)))
+    (unless (featurep module)
+      (projectIDE-load-module module))
+    (projectIDE-add-module-signature module (or signature projectIDE-active-project))))
+
+
+
+(defun projectIDE-unload-all-modules (signature)
+
+  "Instead of directly unload all modules, SINGATURE
+is removed from module object.  Module is garbage collected
+automatically.  This help preventing unnecessary loading
+and unloading modules."
+
   (dolist (module (projectIDE-get-modules signature))
-    (projectIDE-load-module module)))
+    (projectIDE-remove-module-signature module signature)))
+
+
+
+(defun projectIDE-garbage-collect-module ()
+
+  "Unload the module which is no longer in used."
+
+  (let ((modules (copy-tree projectIDE-runtime-modules))
+        module-object
+        unload-modules)
+    (while (car-safe modules)
+      (setq module-object (cadr modules))
+      (when (and (projectIDE-module-p module-object)
+                 (not (projectIDE-module-signatures module-object)))
+        (push (car modules) unload-modules))
+      (setq modules (cddr modules)))
+
+    (dolist (module unload-modules)
+      (projectIDE-unload-module module))))
 
 
 
@@ -223,11 +257,8 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
-         (body (projectIDE-function-body function))
-         (interactive (and (eq (caar body) 'interactive) (car body)))
-         (body-1 (or (and interactive (append (list 'progn) (cdr body)))
-                     (append (list 'progn) body))))
-    (eval `(defun ,name ,arglist ,docstring ,interactive ,body-1))))
+         (body (projectIDE-function-body function)))
+    (eval `(defun ,name ,arglist ,docstring ,@body))))
 
 (defun projectIDE-realize-cl-defun (name)
   "Produce real function for `cl-defun' type with NAME."
@@ -235,11 +266,8 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
-         (body (projectIDE-function-body function))
-         (interactive (and (eq (caar body) 'interactive) (car body)))
-         (body-1 (or (and interactive (append (list 'progn) (cdr body)))
-                     (append (list 'progn) body))))
-    (eval `(cl-defun ,name ,arglist ,docstring ,interactive ,body-1))))
+         (body (projectIDE-function-body function)))
+    (eval `(cl-defun ,name ,arglist ,docstring ,@body))))
 
 (defun projectIDE-realize-defmacro (name)
   "Produce real macro for `demacro' type with NAME."
@@ -247,8 +275,8 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
-         (body (car (projectIDE-function-body function))))
-    (eval `(defmacro ,name ,arglist ,docstring ,body))))
+         (body (projectIDE-function-body function)))
+    (eval `(defmacro ,name ,arglist ,docstring ,@body))))
 
 (defun projectIDE-realize-cl-defmacro (name)
   "Produce real macro for `cl-demacro' type with NAME."
@@ -256,8 +284,8 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
          (name (projectIDE-function-name function))
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
-         (body (car (projectIDE-function-body function))))
-    (eval `(cl-defmacro ,name ,arglist ,docstring ,body))))
+         (body (projectIDE-function-body function)))
+    (eval `(cl-defmacro ,name ,arglist ,docstring ,@body))))
 
 (defun projectIDE-realize-key (function)
   "Produce real key bind for FUNCTION if it exists."
@@ -270,7 +298,58 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
   (let ((key (projectIDE-get-function-key function)))
     (when key
       (define-key projectIDE-keymap key nil))))
-    
+
+
+
+(defun projectIDE-module-initialize ()
+
+  "Initialize projectIDE-module."
+  
+  ;; Check module folder exist
+    (unless (file-exists-p PROJECTIDE-MODULE-CACHE-PATH)
+      (make-directory PROJECTIDE-MODULE-CACHE-PATH))
+
+    (setq projectIDE-runtime-functions (make-hash-table :test 'eq :size 100))
+
+    (setq projectIDE-module-garbage-collect-timer
+          (run-with-timer projectIDE-module-garbage-collect-time
+                          projectIDE-module-garbage-collect-time
+                          'projectIDE-garbage-collect-module))
+
+    ;; advice set-buffer is better than switch-to-buffer in terms of performance
+    ;; Set-buffer includes find-file and switch-to-buffer
+    (advice-add 'set-buffer :after 'projectIDE-advice-buffer-change)
+    (advice-add 'kill-buffer :after 'projectIDE-advice-buffer-change)
+
+    (add-hook 'projectIDE-open-project-hook 'projectIDE-load-all-modules)
+    (add-hook 'projectIDE-config-updated-hook 'projectIDE-load-all-modules))
+
+
+
+(defun projectIDE-module-terminate ()
+  
+  "Terminate projectIDE-module."
+
+  (remove-hook 'projectIDE-open-project-hook 'projectIDE-load-all-modules)
+  (remove-hook 'projectIDE-config-updated-hook 'projectIDE-load-all-modules)
+
+  (advice-remove 'set-buffer 'projectIDE-advice-buffer-change)
+  (advice-remove 'kill-buffer 'projectIDE-advice-buffer-change)
+
+  (when projectIDE-module-garbage-collect-timer
+    (cancel-timer projectIDE-module-garbage-collect-timer)
+    (setq projectIDE-module-garbage-collect-timer nil))
+  
+  (let ((module-plist (copy-tree projectIDE-runtime-modules))
+        modules)
+
+    (while (car-safe module-plist)
+      (push (car module-plist) modules)
+      (setq module-plist (cddr module-plist)))
+
+    (dolist (module modules)
+      (projectIDE-unload-module module))))
+
 
 (provide 'projectIDE-module)
 ;;; projectIDE-module.el ends here
