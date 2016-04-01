@@ -1,5 +1,4 @@
-;;; projectIDE-fstream.el --- project configuration file
-;;
+;;; projectIDE-fstream.el --- projectIDE fstream file
 ;;
 ;; Copyright (C) 2015-2016 Mola-T
 ;; Author: Mola-T <Mola@molamola.xyz>
@@ -28,7 +27,6 @@
 ;; Boston, MA 02110-1301, USA.
 ;;
 ;;; Commentary:
-;;
 ;;
 ;; This is part of projectIDE.el
 ;; This file provides fstream functions.
@@ -89,19 +87,17 @@ Descrip.:\t Function list calling this function for debug purpose."
                  (write-region "" nil file nil 'inhibit nil 'exc1))
                (unless (file-writable-p file)
                  (projectIDE-message 'Error
-                                            (format "Unable to write to %s." file)
-                                            nil
-                                            'fout<<projectIDE
-                                            (nconc (list 'fout<<projectIDE) caller))
+                                     (format "Unable to write to %s." file)
+                                     nil
+                                     (projectIDE-caller 'fout<<projectIDE caller))
                  (throw 'Error nil))))
 
            ;; Check symbol exists
            (unless (boundp data)
              (projectIDE-message 'Error
-                                        (format "Symbol %s is undefined." (symbol-name data))
-                                        nil
-                                        'fout<<projectIDE
-                                        (nconc (list 'fout<<projectIDE) caller))
+                                 (format "Symbol %s is undefined." (symbol-name data))
+                                 nil
+                                 (projectIDE-caller 'fout<<projectIDE caller))
              (throw 'Error nil))
 
            ;; Serialize and wirte data to file
@@ -110,11 +106,12 @@ Descrip.:\t Function list calling this function for debug purpose."
 
            (when (and projectIDE-debug-mode noError)
              (projectIDE-message 'Info
-                                        (format "Data %s written to file %s" (symbol-name data) file)
-                                        nil
-                                        'fout<<projectIDE
-                                        (nconc (list 'fout<<projectIDE) caller)))
+                                 (format "Data %s written to file %s" (symbol-name data) file)
+                                 nil
+                                 (projectIDE-caller 'fout<<projectIDE caller)))
            noError)))
+
+
 
 (defun fin>>projectIDE (file symbol &optional caller)
   "This function is safe.
@@ -145,8 +142,7 @@ Descrip.:\t Function list calling this function for debug purpose."
       (projectIDE-message 'Error
                                  (format "File %s is not accessible" file)
                                  nil
-                                 'fin>>projectIDE
-                                 (nconc (list 'fin>>projectIDE) caller))
+                                 (projectIDE-caller 'fin>>projectIDE caller))
       (throw 'Error nil))
 
     ;; Read from file
@@ -159,16 +155,14 @@ Descrip.:\t Function list calling this function for debug purpose."
           (projectIDE-message 'Error
                                      (format "Symbol %s is undefined." (symbol-name symbol))
                                      nil
-                                     'fin>>projectIDE
-                                     (nconc (list 'fin>>projectIDE) caller))
+                                     (projectIDE-caller 'fin>>projectIDE caller))
           (throw 'Error nil))))
 
     (when projectIDE-debug-mode
       (projectIDE-message 'Info
                                  (format "Data from %s read into %s" file (symbol-name symbol))
                                  nil
-                                 'fin>>projectIDE
-                                 (nconc (list 'fin>>projectIDE) caller)))
+                                 (projectIDE-caller 'fin>>projectIDE caller)))
     t))
 
 (provide 'projectIDE-fstream)

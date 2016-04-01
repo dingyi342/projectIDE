@@ -62,22 +62,22 @@ Type:\t\t int
 Descrip.:\t The modifier of the base variable name."
   
   (cond
-   ((eq basevar 'projectIDE-precompile)
+   ((eq basevar 'projectIDE-precompile-f)
     (if (= prefix 1)
-        'projectIDE-precompile
-      (intern (concat "projectIDE-precompile-" (number-to-string prefix)))))
-   ((eq basevar 'projectIDE-compile)
+        'projectIDE-precompile-f
+      (intern (concat "projectIDE-precompile-f" (number-to-string prefix)))))
+   ((eq basevar 'projectIDE-compile-f)
     (if (= prefix 1)
-        'projectIDE-compile
-      (intern (concat "projectIDE-compile-" (number-to-string prefix)))))
-   ((eq basevar 'projectIDE-postcompile)
+        'projectIDE-compile-f
+      (intern (concat "projectIDE-compile-f" (number-to-string prefix)))))
+   ((eq basevar 'projectIDE-postcompile-f)
     (if (= prefix 1)
-        'projectIDE-postcompile
-      (intern (concat "projectIDE-postcompile-" (number-to-string prefix)))))
-   ((eq basevar 'projectIDE-compile-cleanup)
+        'projectIDE-postcompile-f
+      (intern (concat "projectIDE-postcompile-f" (number-to-string prefix)))))
+   ((eq basevar 'projectIDE-compile-cleanup-f)
     (if (= prefix 1)
-        'projectIDE-compile-cleanup
-      (intern (concat "projectIDE-compile-cleanup-" (number-to-string prefix)))))))
+        'projectIDE-compile-cleanup-f
+      (intern (concat "projectIDE-compile-cleanup-f" (number-to-string prefix)))))))
 
 
 
@@ -111,13 +111,13 @@ will call the 'cmake-compile function."
       
      (let* ((signature (projectIDE-get-Btrace-signature))
            (precompile (projectIDE-get-module-var signature
-                                                  (projectIDE-compile-generate-var-name 'projectIDE-precompile arg)))
+                                                  (projectIDE-compile-generate-var-name 'projectIDE-precompile-f arg)))
            (compile (projectIDE-get-module-var signature
-                                               (projectIDE-compile-generate-var-name 'projectIDE-compile arg)))
+                                               (projectIDE-compile-generate-var-name 'projectIDE-compile-f arg)))
            (postcompile (projectIDE-get-module-var signature
-                                                   (projectIDE-compile-generate-var-name 'projectIDE-postcompile arg)))
+                                                   (projectIDE-compile-generate-var-name 'projectIDE-postcompile-f arg)))
            (compile-cleanup (projectIDE-get-module-var signature
-                                                   (projectIDE-compile-generate-var-name 'projectIDE-compile-cleanup arg))))
+                                                   (projectIDE-compile-generate-var-name 'projectIDE-compile-cleanup-f arg))))
 
       (when (and (car-safe precompile) (fboundp (intern (car precompile))))
         (ignore-errors (apply (intern (car precompile)) (cdr precompile))))
@@ -136,6 +136,8 @@ will call the 'cmake-compile function."
                         "Compile finished"
                         t)))
 
+
+(projectIDE-register-Mx 'projectIDE-compile)
 
 
 (provide 'projectIDE-compile)

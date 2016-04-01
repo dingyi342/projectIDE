@@ -1,10 +1,9 @@
-;;; projectIDE-scriptloader.el --- projectIDE scriptloader -*- lexical-binding: t -*-
+;;; projectIDE-scriptloader.el --- projectIDE scriptloader
 ;;
 ;; Copyright (C) 2015-2016 Mola-T
 ;; Author: Mola-T <Mola@molamola.xyz>
 ;; URL: https://github.com/mola-T/projectIDE
 ;; Version: 1.0
-;; Package-Requires: ((cl-lib.el "0.5"))
 ;; Keywords: project, convenience
 ;;
 ;;; License:
@@ -27,9 +26,9 @@
 ;;
 ;;; Commentary:
 ;;
+;; This file is part of projectIDE.
 ;; This files provides script laoding funtions.
 ;;
-;; 
 ;;
 ;;; code:
 (require 'projectIDE-header)
@@ -143,6 +142,17 @@ Descrip.: File path to the bat file."
         (sit-for 0.5)))))
 
 
+;;;###autoload
+(defun projectIDE-shellify-path (elt)
+
+  "Convert Emacs file path to shell file path if ELT is a file path.
+
+ELT
+Type:\t\t string
+Descrip.:\t Convert Emacs file path to shell file path."
+  
+    (replace-regexp-in-string " " "\\ " elt nil t))
+
 
 ;;;###autoload
 (defun projectIDE-load-script (first &rest arg)
@@ -172,7 +182,7 @@ files are supported."
       (when (file-executable-p (concat (projectIDE-get-project-path projectIDE-active-project) first))
         (projectIDE-run-bat-file (concat (projectIDE-get-project-path projectIDE-active-project) first)))))
    (t
-    (shell-command (mapconcat 'identity (append (list first) arg) " "))
+    (shell-command (mapconcat 'projectIDE-shellify-path (append (list first) arg) " "))
     (projectIDE-message 'Info
                         (format "Finsihed command: %s" (mapconcat 'identity (append (list first) arg) " "))
                         t))))

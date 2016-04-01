@@ -1,10 +1,9 @@
-;;; projectIDE-session.el --- projectIDE header file
+;;; projectIDE-session.el --- projectIDE session file
 ;;
 ;; Copyright (C) 2015-2016 Mola-T
 ;; Author: Mola-T <Mola@molamola.xyz>
 ;; URL: https://github.com/mola-T/projectIDE
 ;; Version: 1.0
-;; Package-Requires: ((cl-lib.el "0.5"))
 ;; Keywords: project, convenience
 ;;
 ;;; License:
@@ -99,7 +98,7 @@ Never attempt to modify it directly.")
                          (projectIDE-session-time (gethash file2 session-hash))
                          (projectIDE-session-time (gethash file1 session-hash)))))
 
-          (setq remove-files (subseq files (- projectIDE-session-limit projectIDE-session-reduce-number)))
+          (setq remove-files (cl-subseq files (- projectIDE-session-limit projectIDE-session-reduce-number)))
           (dolist (file remove-files)
             (remhash file session-hash))))
       

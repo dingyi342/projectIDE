@@ -60,11 +60,14 @@
 ;;fff (defun projectIDE-trim-string (string))
 ;;fff (defun projectIDE-add-to-list (list element))
 ;;fff (defun projectIDE-append (list1 list2))
+;;fff (defun projectIDE-wildcard-to-regexp (wildcard))
 ;;fff (defun projectIDE-manipulate-filter (projectRoot list))
 ;;fff (defun projectIDE-prompt (prompt choices &optional initial-input))
 ;;fff (defun projectIDE-read-file-name (prompt &optional dir default-filename mustmatch initial predicate))
 ;;fff (defun projectIDE-read-directory-name (prompt &optional dir default-dirname mustmatch initial))
 ;;fff (defun projectIDE-dired (dirname &optional switches))
+;;fff (defun projectIDE-register-Mx (functions))
+;;fff (defun projectIDE-deregister-Mx (functions))
 
 (defun projectIDE-concat-regexp (list)
   
@@ -163,13 +166,85 @@ Descrip.:\t List to be combined."
 
 
 
+(defun projectIDE-wildcard-to-regexp (wildcard)
+  
+  "Given a shell file name pattern WILDCARD, return an equivalent regexp.
+The generated regexp will match a filename only if the filename
+matches that wildcard according to shell rules.  Only wildcards known
+by `sh' are supported."
+  
+  (let* ((i (string-match "[[.*+\\^$?]" wildcard))
+	 ;; Copy the initial run of non-special characters.
+	 (result (substring wildcard 0 i))
+	 (len (length wildcard)))
+    ;; If no special characters, we're almost done.
+    (if i
+	(while (< i len)
+	  (let ((ch (aref wildcard i))
+		j)
+	    (setq
+	     result
+	     (concat result
+		     (cond
+		      ((and (eq ch ?\[)
+			    (< (1+ i) len)
+			    (eq (aref wildcard (1+ i)) ?\]))
+		       "\\[")
+		      ((eq ch ?\[)	; [...] maps to regexp char class
+		       (progn
+			 (setq i (1+ i))
+			 (concat
+			  (cond
+			   ((eq (aref wildcard i) ?!) ; [!...] -> [^...]
+			    (progn
+			      (setq i (1+ i))
+			      (if (eq (aref wildcard i) ?\])
+				  (progn
+				    (setq i (1+ i))
+				    "[^]")
+				"[^")))
+			   ((eq (aref wildcard i) ?^)
+			    ;; Found "[^".  Insert a `\0' character
+			    ;; (which cannot happen in a filename)
+			    ;; into the character class, so that `^'
+			    ;; is not the first character after `[',
+			    ;; and thus non-special in a regexp.
+			    (progn
+			      (setq i (1+ i))
+			      "[\000^"))
+			   ((eq (aref wildcard i) ?\])
+			    ;; I don't think `]' can appear in a
+			    ;; character class in a wildcard, but
+			    ;; let's be general here.
+			    (progn
+			      (setq i (1+ i))
+			      "[]"))
+			   (t "["))
+			  (prog1	; copy everything upto next `]'.
+			      (substring wildcard
+					 i
+					 (setq j (string-match
+						  "]" wildcard i)))
+			    (setq i (if j (1- j) (1- len)))))))
+		      ((eq ch ?.)  "\\.")
+		      ((eq ch ?*)  "[^\000]*")
+		      ((eq ch ?+)  "\\+")
+		      ((eq ch ?^)  "\\^")
+		      ((eq ch ?$)  "\\$")
+		      ((eq ch ?\\) "\\\\") ; probably cannot happen...
+		      ((eq ch ??)  "[^\000]")
+		      (t (char-to-string ch)))))
+	    (setq i (1+ i)))))
+    ;; Shell wildcards should match the entire filename,
+    ;; not its part.  Make the regexp say so.
+    (concat result "\\'")))
+
+
+
 (defun projectIDE-manipulate-filter (projectRoot list)
   
   "This function add the PROJECTROOT as a prefix to each entry in the LIST.
-It also ajusts the regexp in the list so that
-1) \"*\" is converted to \".*\" to provide wildcard function
-2) \".\" is converted to \"\\.\" to prevent misuse of regexp in file extension
-3) string end \"\\'\" is added to each list item
+It also convert the LIST from wildcard to regexp.
 This function return a manipulated LIST.
 
 Return
@@ -186,8 +261,7 @@ Descip.:\t A string list which each entry is to be prefixed."
 
   (let (return)
     (dolist (entry list)
-      (cl-pushnew (concat projectRoot
-                          (wildcard-to-regexp entry))
+      (cl-pushnew (concat projectRoot (projectIDE-wildcard-to-regexp entry))
                   return
                   :test 'equal))
     (projectIDE-concat-regexp return)))
@@ -212,9 +286,7 @@ Descrip.: Prompt message.
 
 CHOICES
 Type:\t\t list of any type
-Descrip.: A list of choices to let user choose.
-
-"
+Descrip.: A list of choices to let user choose."
 
   (if (fboundp projectIDE-prompt-function)
       (funcall projectIDE-prompt-function prompt choices
@@ -266,6 +338,37 @@ See `dired' for details."
   (if (fboundp projectIDE-dired-function)
       (funcall projectIDE-dired-function dirname switches)
     (dired dirname switches)))
+
+
+(defun projectIDE-register-Mx (functions)
+
+  "Register FUNCTIONS to `projectIDE-M-x-functions'.
+FUNCTIONS can be a list of functions or just a single function.
+
+FUNCTIONS
+Type:\t\t symbol or symbol list
+Descrip.:\t Register to `projectIDE-M-x-functions'."
+
+  (if (listp functions)
+      (dolist (function functions)
+        (cl-pushnew function projectIDE-M-x-functions :test 'eq))
+    (cl-pushnew functions projectIDE-M-x-functions :test 'eq)))
+
+
+
+(defun projectIDE-deregister-Mx (functions)
+
+  "Deregister FUNCTIONS from `projectIDE-M-x-functions'.
+FUNCTIONS can be a list of functions or just a single function.
+
+FUNCTIONS
+Type:\t\t symbol or symbol list
+Descrip.:\t Deregister from `projectIDE-M-x-functions'."
+
+  (if (listp functions)
+      (dolist (function functions)
+        (setq projectIDE-M-x-functions (cl-remove function projectIDE-M-x-functions :test 'eq)))
+    (setq projectIDE-M-x-functions (cl-remove functions projectIDE-M-x-functions :test 'eq))))
 
 ;; General function ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -679,7 +782,8 @@ A sum of these cache modes you want to enable."
     ,(concat (file-name-as-directory "*_darcs") "*")
     ,(concat (file-name-as-directory "*.tox") "*")
     ,(concat (file-name-as-directory "*.svn") "*")
-    ,(concat (file-name-as-directory "*.stack-work") "*"))
+    ,(concat (file-name-as-directory "*.stack-work") "*")
+    ,(concat (file-name-as-directory "*.projectIDE_cleanup") "*"))
   "A list of exclude items by projectIDE."
   :group 'projectIDE-config-file
   :type '(repeat string))
@@ -819,7 +923,13 @@ It can be either name or path."
 
 
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; Project window variable
+;; Project window
+;;;vvv (defcustom projectIDE-max-horizontal-window)
+;;;vvv (defcustom projectIDE-max-vertical-window)
+;;;vvv (defcustom projectIDE-other-window-priority)
+;;;vvv (defcustom projectIDE-other-window-horizontal-priority
+;;;vvv (defcustom projectIDE-other-window-vertical-priority)
+;;;fff (defun projectIDE-other-window ()) -I
 
 (defcustom projectIDE-max-horizontal-window 2
   "The max number of visible horizontal window(s) projectIDE can open."
@@ -907,7 +1017,7 @@ Can only be \"above\" or \"below\""
     
     (other-window 1)))
 
-;; Project window variable ends
+;; Project window ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -1065,6 +1175,9 @@ Never attempt to modify it directly.")
   "Timer for `projectIDE-timer-function-idle' to reschedule itself, or nil.
 Never attempt to modify it directly.")
 
+(defvar projectIDE-M-x-functions nil
+  "Store projectIDE functions for M-x prompt.")
+
 ;; Runtime variable ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1220,7 +1333,7 @@ Return nil if \".projectIDE\" no longer exists at path.
 
 Return
 Type:\t\t string or nil
-Descrip.:\t\t Path to project root or nil if invalid project root.
+Descrip.:\t Path to project root or nil if invalid project root.
 
 SIGNATURE
 Type:\t\t string
@@ -1241,7 +1354,7 @@ Return nil if \".projectIDE\" no longer exists at path.
 
 Return
 Type:\t\t string or nil
-Descrip.:\t\t Path to project config file
+Descrip.:\t Path to project config file
 \t\t\t: Returns nil if config file no longer exists.
 
 SIGNATURE
@@ -1474,7 +1587,7 @@ Return nil if \".projectIDE\" no longer exists at path.
 
 Return
 Type:\t\t emacs time
-Descrip.:\t\t Time of last update time of config file in projectIDE-runtime-cache.
+Descrip.:\t Time of last update time of config file in projectIDE-runtime-cache.
 
 SIGNATURE
 Type:\t\t string
@@ -1830,6 +1943,63 @@ Descrip.:\t A project based unique ID."
 
 
 
+(defun projectIDE-parse-var (signature list)
+
+  "Parse ${root}, ${file} and ${folder} in LIST."
+
+  (let (return)
+    (dolist (elt list)
+      (let ((elt-1 elt)
+            word
+            filter)
+        (cond
+         ((string-match (concat (file-name-as-directory "\\${root}") "*") elt-1)
+          (while (string-match (concat (file-name-as-directory "\\${root}") "*") elt-1)
+            (setq elt-1
+                  (replace-regexp-in-string
+                   (concat (file-name-as-directory "\\${root}") "*")
+                   (projectIDE-get-project-path signature)
+                   elt-1)))
+          (push elt-1 return))
+         ((string-match "\\${file.*}" elt-1)
+          (setq word (substring elt-1 (string-match "\\${file.*}" elt-1) (match-end 0)))
+          (when (string-match ":" word)
+            (setq filter (substring word (+ (string-match ":" word) 1) (string-match "}" word))))
+          (when filter
+            (setq filter (projectIDE-manipulate-filter (projectIDE-get-project-path signature) (split-string filter))))
+          (when (string= filter "")
+            (setq filter nil))
+          (setq return
+                (append
+                 (nreverse
+                  (projectIDE-get-file-list signature
+                                    t
+                                    (and filter
+                                         (lambda (elt) (if (string-match filter elt) t nil)))))
+                 return)))
+         ((string-match "\\${folder.*}" elt-1)
+          (setq word (substring elt-1 (string-match "\\${folder.*}" elt-1) (match-end 0)))
+          (when (string-match ":" word)
+            (setq filter (substring word (+ (string-match ":" word) 1) (string-match "}" word))))
+          (when filter
+            (setq filter (projectIDE-manipulate-filter (projectIDE-get-project-path signature) (split-string filter))))
+          (when (string= filter "")
+            (setq filter nil))
+          (setq return
+                (append
+                 (nreverse
+                  (projectIDE-get-folder-list signature
+                                              t
+                                              (and filter
+                                         (lambda (elt) (if (string-match filter elt) t nil)))))
+                 return)))
+         (t
+           (push elt-1 return)))))
+
+    (nreverse return)))
+
+
+
 (defun projectIDE-get-module-var (signature var)
   
   "Get the module value of VAR from project specified by SIGNATURE.
@@ -1851,8 +2021,9 @@ Descrip.:\t A project based unique ID."
   
   (let* ((cache (gethash signature projectIDE-runtime-cache))
          (project (and (projectIDE-cache-p cache) (projectIDE-cache-project cache)))
-         (values (and (projectIDE-project-p project) (projectIDE-project-module-var project))))
-    (plist-get values var)))
+         (values (and (projectIDE-project-p project) (projectIDE-project-module-var project)))
+         (string-list (plist-get values var)))
+    (projectIDE-parse-var signature string-list)))
 
 
 
@@ -1869,17 +2040,21 @@ CACHE
 Type:\t\t projectIDE-cache object
 Descrip.:\t The cache object to be put in projectIDE-runtime-cache."
 
+  (print "FUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKk")
   (puthash signature cache projectIDE-runtime-cache)
   
   (unless (gethash (concat signature "modulenonpersist") projectIDE-runtime-cache)
     (puthash (concat signature "modulenonpersist") (make-hash-table :size 100) projectIDE-runtime-cache))
-  
-  (when (file-readable-p (concat PROJECTIDE-MODULE-CACHE-PATH signature))
+
+    (when (file-readable-p (concat PROJECTIDE-MODULE-CACHE-PATH signature))
+    (print "FUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKk")
       (let (modulepersist-cache)
         (and
          (fin>>projectIDE (concat PROJECTIDE-MODULE-CACHE-PATH signature) 'modulepersist-cache (projectIDE-caller 'projectIDE-push-cache))
          (hash-table-p modulepersist-cache)
-         (puthash (concat signature "modulepersist") modulepersist-cache projectIDE-runtime-cache))))
+         (puthash (concat signature "modulepersist") modulepersist-cache projectIDE-runtime-cache)
+         (print "FUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKk")
+         (pp modulepersist-cache))))
   (unless (gethash (concat signature "modulepersist") projectIDE-runtime-cache)
     (puthash (concat signature "modulepersist") (make-hash-table :size 100) projectIDE-runtime-cache))
   
@@ -2144,7 +2319,7 @@ If signature is not provided, return opened buffers from all project.
 
 Return
 Type:\t\t list of buffer objects
-Descrip.:\t\t Buffer objects of given project.
+Descrip.:\t Buffer objects of given project.
 
 SIGNATURE
 Type:\t\t string
@@ -2525,7 +2700,7 @@ Descrip.:\t A list of functions definded in specified module.
 
 NAME
 Type:\t\t symbol
-Descrip.:\t\t Name of function."
+Descrip.:\t Name of function."
 
   (let ((module (plist-get projectIDE-runtime-modules name)))
     (and (projectIDE-module-p module) (projectIDE-module-functions module))))
@@ -2539,14 +2714,14 @@ if function of name exists, otherwise return nil.
 
 Return
 Type:\t\t proejctIDE-function object or nil
-Descrip.:\t\t Function object that has been defined by either
+Descrip.:\t Function object that has been defined by either
 \t\t\t `projectIDE-defun', `porjectIDE-cl-defun',
 \t\t\t `projectIDE-defmarco', `projectIDE-cl-defmarco'.
 \t\t\t Or return nil if no such record.
 
 NAME
 Type:\t\t symbol
-Descrip.:\t\t Name of function."
+Descrip.:\t Name of function."
   
   (gethash name projectIDE-runtime-functions))
 
@@ -2566,7 +2741,7 @@ Descrip.:\t Type of defining of function.
 
 NAME
 Type:\t\t symbol
-Descrip.:\t\t Name of function."
+Descrip.:\t Name of function."
 
   (let* ((function (gethash name projectIDE-runtime-functions))
          (type (and (projectIDE-function-p function) (projectIDE-function-type function))))
@@ -2579,13 +2754,15 @@ Descrip.:\t\t Name of function."
 
 Return
 Type:\t\t internal Emacs key representation or nil
-Descrip.:\t\t Project specific keybind for FUNCTION.
+Descrip.:\t Project specific keybind for FUNCTION.
 \t\t\t Return nil if no keybind found."
   
   (plist-get projectIDE-key-table function))
 
 ;; projectIDE module endls
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(projectIDE-register-Mx 'projectIDE-other-window)
 
 (provide 'projectIDE-header)
 ;;; projectIDE-header.el ends here

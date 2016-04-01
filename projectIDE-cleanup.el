@@ -1,10 +1,9 @@
-;;; projectIDE-cleanup.el --- projectIDE cleanup -*- lexical-binding: t -*-
+;;; projectIDE-cleanup.el --- projectIDE cleanup file
 ;;
 ;; Copyright (C) 2015-2016 Mola-T
 ;; Author: Mola-T <Mola@molamola.xyz>
 ;; URL: https://github.com/mola-T/projectIDE
 ;; Version: 1.0
-;; Package-Requires: ((cl-lib.el "0.5"))
 ;; Keywords: project, convenience
 ;;
 ;;; License:
@@ -27,6 +26,7 @@
 ;;
 ;;; Commentary:
 ;;
+;; This file is part of projectIDE.
 ;; This files provides cleanup funtions.
 ;;
 ;; Interactive functions:
@@ -250,6 +250,8 @@ For example, \"projectIDE-cleanup = *.elc\" will cleanup all elc files."
                                    (file-name-as-directory PROJECTIDE-CLEANUP-FOLDER)
                                    (file-name-as-directory choice))
                                   projectRoot))))
+
+(projectIDE-register-Mx '(projectIDE-cleanup projectIDE-restore-cleanup))
 
 (provide 'projectIDE-cleanup)
 ;;; projectIDE-cleanup.el ends here

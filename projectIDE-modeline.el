@@ -1,4 +1,4 @@
-;;; projectIDE-modeline.el --- projectIDE header file
+;;; projectIDE-modeline.el --- projectIDE modeline file
 ;;
 ;; Copyright (C) 2015-2016 Mola-T
 ;; Author: Mola-T <Mola@molamola.xyz>
@@ -48,7 +48,8 @@
     (((class color) (min-colors 88) (background dark))
      :background "gray30"
      :foreground "cyan"))
-  "Basic face for highlighting.")
+  "Basic face for highlighting."
+  :group 'projectIDE-face)
 
 (defface projectIDE-project-folder-face
   '((((class color) (min-colors 88) (background light))
@@ -57,7 +58,8 @@
     (((class color) (min-colors 88) (background dark))
      :background "gray30"
      :foreground "gray80"))
-  "Basic face for highlighting.")
+  "Basic face for highlighting."
+  :group 'projectIDE-face)
 
 (defface projectIDE-project-file-face
   '((((class color) (min-colors 88) (background light))
@@ -66,7 +68,8 @@
     (((class color) (min-colors 88) (background dark))
      :background "gray30"
      :foreground "yellow"))
-  "Basic face for highlighting.")
+  "Basic face for highlighting."
+  :group 'projectIDE-face)
 
 (defun projectIDE-generate-mode-line ()
   

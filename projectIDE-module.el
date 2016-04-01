@@ -1,10 +1,9 @@
-;;; projectIDE-module.el --- project configuration file
+;;; projectIDE-module.el --- projectIDE modulefile
 ;;
 ;; Copyright (C) 2015 Mola-T
 ;; Author: Mola-T <Mola@molamola.xyz>
 ;; URL: https://github.com/mola-T/projectIDE
 ;; Version: 1.0
-;; Package-Requires: ((cl-lib.el "0.5") (fdex.el "1.0"))
 ;; Keywords: project, convenience
 ;;
 ;;; License:
@@ -27,8 +26,11 @@
 ;;
 ;;; Commentary:
 ;;
-
+;; This is part of projectIDE
+;; This file provides module functions.
+;; 
 ;;; code:
+
 (require 'cl-lib)
 (require 'projectIDE-header)
 (require 'projectIDE-debug)
@@ -147,6 +149,7 @@ Descrip.:\t Symbol of the module name."
    (let ((functions (projectIDE-get-all-functions-from-module module)))
      (dolist (function functions)
        (projectIDE-unrealize-key function)
+       (projectIDE-deregister-Mx function)
        (fmakunbound function)))
    (setq projectIDE-active-modules (cl-remove module projectIDE-active-modules)))
 
@@ -258,6 +261,8 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
          (body (projectIDE-function-body function)))
+    (when (eq (caar body) 'interactive)
+      (projectIDE-register-Mx name))
     (eval `(defun ,name ,arglist ,docstring ,@body))))
 
 (defun projectIDE-realize-cl-defun (name)
@@ -267,6 +272,8 @@ If NAME cannot be found in `projectIDE-runtime-functions', return nil."
          (arglist (projectIDE-function-args function))
          (docstring (projectIDE-function-docstring function))
          (body (projectIDE-function-body function)))
+    (when (eq (caar body) 'interactive)
+      (projectIDE-register-Mx name))
     (eval `(cl-defun ,name ,arglist ,docstring ,@body))))
 
 (defun projectIDE-realize-defmacro (name)

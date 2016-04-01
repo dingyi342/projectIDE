@@ -1,5 +1,4 @@
-;;; projectIDE-debug.el --- project configuration file
-;;
+;;; projectIDE-debug.el --- projectIDE debug file
 ;;
 ;; Copyright (C) 2015-2016 Mola-T
 ;; Author: Mola-T <Mola@molamola.xyz>
@@ -132,7 +131,10 @@ Descrip.: Functions calling FUNCTION to produce the message.  Just for debug pur
     
     projectIDE-last-message))
 
+
+
 (defmacro projectIDE-caller (current &optional caller)
+  
   "Macro producing a list of function call chain.
 
 CURRENT
@@ -147,6 +149,8 @@ Descrip.:\t The list of function calling this function."
     (list ,current)
     (and projectIDE-debug-mode ,caller)))
 
+
+
 (defun projectIDE-debug-mode-on ()
   "An interative function to turn on debug mode.
 Debug mode only print extra infomation to log file."
@@ -158,6 +162,8 @@ Debug mode only print extra infomation to log file."
 Debug mode only print extra infomation to log file."
   (interactive)
   (setq projectIDE-debug-mode nil))
+
+(projectIDE-register-Mx '(projectIDE-debug-mode-on projectIDE-debug-mode-off))
 
 (provide 'projectIDE-debug)
 ;;; projectIDE-debug.el ends here
