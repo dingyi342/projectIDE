@@ -142,6 +142,33 @@ Descrip.: File path to the bat file."
         (sit-for 0.5)))))
 
 
+
+;;;###autoload
+(defun projectIDE-run-shell-command (command)
+
+  "Run COMMAND.
+
+COMMAND
+Type:\t\t string
+Descrip.: Shell command."
+
+  (with-temp-message
+      (projectIDE-message 'Info
+                          "Running shell command ... "
+                          nil)
+
+    (projectIDE-maintain-shell-window)
+    
+    (let ((process
+           (start-process-shell-command
+            (concat "*projectIDE shell command*")
+            (get-buffer PROJECTIDE-SHELL-NAME)
+            command)))
+      (while (process-live-p process)
+        (projectIDE-maintain-shell-window)
+        (sit-for 0.5)))))
+
+
 ;;;###autoload
 (defun projectIDE-shellify-path (elt)
 
@@ -162,6 +189,11 @@ The script can be a single line of shell script or batch script.
 Or the file path of several types of script file.
 Currently, shell script, batch script and python script
 files are supported."
+
+  (with-current-buffer (get-buffer-create PROJECTIDE-SHELL-NAME)
+    (setq default-directory (projectIDE-get-project-path (projectIDE-get-Btrace-signature)))
+    (unless (eq major-mode 'compilation-mode)
+      (compilation-mode)))
   
   (cond
    ((or (string= (file-name-extension first) "sh")
@@ -182,7 +214,7 @@ files are supported."
       (when (file-executable-p (concat (projectIDE-get-project-path projectIDE-active-project) first))
         (projectIDE-run-bat-file (concat (projectIDE-get-project-path projectIDE-active-project) first)))))
    (t
-    (shell-command (mapconcat 'projectIDE-shellify-path (append (list first) arg) " "))
+    (projectIDE-run-shell-command (mapconcat 'projectIDE-shellify-path (append (list first) arg) " "))
     (projectIDE-message 'Info
                         (format "Finsihed command: %s" (mapconcat 'identity (append (list first) arg) " "))
                         t))))

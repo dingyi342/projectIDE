@@ -29,18 +29,18 @@
 ;;
 ;; This is part of projectIDE.el
 ;; This file provides runtime debug functions for developers..
-;; Pay attention that this file must NOT be required by a package needs to be compiled.
-;; The macro in this file is uncompilable.
-;; They works for runtime expansion only.
-;; Besides, the naming tradition is not obeyed.
+;; The naming tradition is not obeyed.
 ;; This just provide a convinent, short named functions for debug/development.
-;; Personally, I use it in scrach.
+;; Personally, I use it in scrach with eval-last-sexp.
 ;;
 ;;; Code:
 
-(defun projectIDE-print-variable (var)
-  "Insert VAR at bottom of current buffer.
+(defun pv (var)
+  
+  "Print variable.
+Insert VAR at bottom of current buffer.
 Only for debug purpose."
+  
   (goto-char (point-max))
   (insert "\n\n")
   (let ((beg (point)))
@@ -48,27 +48,33 @@ Only for debug purpose."
                     (comment-region beg (point))))
   (message "Done"))
 
-(defmacro pvm (&rest args)
-  "Print variable message."
-  (if args
-       (progn
-         (message "[projectIDE::Debug] This is the start of debug message.\n")
-         (dolist (arg args)
-           (cond
-            ((stringp arg)
-             (message (concat arg "\n")))
-            ((numberp arg)
-             (message (concat (number-to-string arg) "\n")))
-            ((listp arg)
-             (message (concat (number-to-string arg) "\n")))
-            ((boundp arg)
-             (message (concat (symbol-name arg) " :"))
-             (message (pp-to-string (symbol-value arg))))
-            ((boundp arg)
-             (message (concat (symbol-name arg) " :"))
-             (message "Undefined as a variable."))))
-         (message "[projectIDE::Debug] This is the end of debug message."))
-    (message "[projectIDE::Debug] This is a projectIDE debug message~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")))
+
+
+(defmacro pf (body)
+  
+  "Print function result.
+Insert eval result of BODY at bottom of current buffer.
+Only for debug purpose."
+  
+  `(progn
+     (goto-char (point-max))
+     (insert "\n\n")
+     (let ((beg (point)))
+       (save-excursion
+         (insert
+          (pp ,body))
+         (comment-region beg (point))))))
+
+(defun rc ()
+  
+  "Remove comment.
+Remove comment for `current-buffer'"
+
+  (save-excursion
+    (goto-char (point-min))
+    (let (kill-ring)
+      (comment-kill (count-lines (point-min) (point-max))))
+    (delete-trailing-whitespace)))
 
 (provide 'projectIDE-dev)
 ;;; projectIDE-dev.el ends here

@@ -1,4 +1,4 @@
-;;; projectIDE-compile.el --- projectIDE compile -*- lexical-binding: t -*-
+;;; projectIDE-compile.el --- projectIDE compile
 ;;
 ;; Copyright (C) 2015-2016 Mola-T
 ;; Author: Mola-T <Mola@molamola.xyz>
@@ -102,8 +102,8 @@ will call the 'cmake-compile function."
 
     (save-some-buffers)
     (when (projectIDE-important-cmd-update-cache? (projectIDE-get-Btrace-signature))
-      (projectIDE-update-cache))
-    
+         (projectIDE-update-cache))
+        
     (with-temp-message
         (projectIDE-message 'Info
                             "Do not switch buffer during compile proecess."
@@ -117,20 +117,26 @@ will call the 'cmake-compile function."
            (postcompile (projectIDE-get-module-var signature
                                                    (projectIDE-compile-generate-var-name 'projectIDE-postcompile-f arg)))
            (compile-cleanup (projectIDE-get-module-var signature
-                                                   (projectIDE-compile-generate-var-name 'projectIDE-compile-cleanup-f arg))))
-
-      (when (and (car-safe precompile) (fboundp (intern (car precompile))))
-        (ignore-errors (apply (intern (car precompile)) (cdr precompile))))
-      
-      (if (and (car-safe compile) (fboundp (intern (car compile))))
-          (apply (intern (car compile)) (cdr compile))
-        (call-interactively 'compile))
-
-      (when (and (car-safe postcompile) (fboundp (intern (car postcompile))))
-        (ignore-errors (apply (intern (car postcompile)) (cdr postcompile))))
-
-      (when (and (car-safe compile-cleanup) (fboundp (intern (car compile-cleanup))))
-        (ignore-errors (apply (intern (car compile-cleanup)) (cdr compile-cleanup))))))
+                                                       (projectIDE-compile-generate-var-name 'projectIDE-compile-cleanup-f arg))))
+       
+       (when (and (car-safe precompile) (fboundp (intern (car precompile))))
+         (ignore-errors (apply (intern (car precompile)) (cdr precompile)))
+         (when (projectIDE-important-cmd-update-cache? (projectIDE-get-Btrace-signature))
+           (projectIDE-update-cache)))
+              
+       (if (and (car-safe compile) (fboundp (intern (car compile))))
+           (apply (intern (car compile)) (cdr compile))
+         (call-interactively 'compile))
+       
+       (when (and (car-safe postcompile) (fboundp (intern (car postcompile))))
+         (when (projectIDE-important-cmd-update-cache? (projectIDE-get-Btrace-signature))
+           (projectIDE-update-cache))
+         (ignore-errors (apply (intern (car postcompile)) (cdr postcompile))))
+       
+       (when (and (car-safe compile-cleanup) (fboundp (intern (car compile-cleanup))))
+         (when (projectIDE-important-cmd-update-cache? (projectIDE-get-Btrace-signature))
+           (projectIDE-update-cache))
+         (ignore-errors (apply (intern (car compile-cleanup)) (cdr compile-cleanup))))))
 
     (projectIDE-message 'Info
                         "Compile finished"

@@ -62,6 +62,8 @@ Instead, it should run with idle timer.
 See `projectIDE-advice-buffer-change' for details."
 
   ;; don't run on temp buffer
+  (unless (projectIDE-get-cache projectIDE-active-project)
+    (setq projectIDE-active-project nil))
   (unless (string-match "\\*.*\\*" (buffer-name (current-buffer)))
     (setq projectIDE-active-project (projectIDE-get-Btrace-signature))
     (let ((diff (projectIDE-module-diff (projectIDE-get-Btrace-signature))))

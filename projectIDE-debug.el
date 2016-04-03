@@ -60,6 +60,53 @@
   :group 'projectIDE-face)
 
 
+(defface projectIDE-message-project-name-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "DodgerBlue")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "cyan"))
+  "Face for project name in message."
+  :group 'projectIDE-face)
+
+(defface projectIDE-message-config-file-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "yellow")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "yellow"))
+  "Face for config file in message."
+  :group 'projectIDE-face)
+
+
+
+(defun projectIDE-propertize-message (input)
+
+  "Propertize the INPUT message and return the propertized message.
+
+Return
+Type:\t\t string
+Descrip.: Propertized message.
+
+INPUT
+Type:\t\t string
+Descrip.: Message to be propertized."
+
+  (let ((message input))
+
+    (setq message (replace-regexp-in-string "\\.projectIDE"
+                                            (propertize ".projectIDE" 'face 'projectIDE-message-config-file-face)
+                                            message
+                                            nil t))
+    
+    (when (projectIDE-get-project-name (projectIDE-get-Btrace-signature))
+     (setq message
+          (replace-regexp-in-string (concat "\\[" (projectIDE-get-project-name (projectIDE-get-Btrace-signature)) "\\]")
+                                    (propertize
+                                     (concat "["
+                                             (projectIDE-get-project-name (projectIDE-get-Btrace-signature)) "]")
+                                     'face 'projectIDE-message-project-name-face) message nil t)))
+    message))
+
+
 
 (defun projectIDE-message (type message &optional print functions)
   
@@ -109,6 +156,8 @@ Descrip.: Functions calling FUNCTION to produce the message.  Just for debug pur
            (setq message-prefix (propertize "[projectIDE::Info]" 'face 'projectIDE-info-message-face))
            (setq logtype 1)))
 
+    (setq message (projectIDE-propertize-message message))
+
     (setq projectIDE-last-message (concat message-prefix " " message))
     
     (when print
@@ -116,7 +165,7 @@ Descrip.: Functions calling FUNCTION to produce the message.  Just for debug pur
     
     (when (and (file-exists-p PROJECTIDE-LOG-PATH)
                (or projectIDE-debug-mode (and logtype (>= logtype projectIDE-log-level))))
-      (let ((message (replace-regexp-in-string "\n" "\n\t\t\t\t\t" message))
+      (let ((message (replace-regexp-in-string "\n" "\n\t\t\t\t\t" (substring-no-properties message)))
             functions-string)
         (dolist (function functions)
           (when (symbolp function)

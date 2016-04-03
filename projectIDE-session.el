@@ -128,9 +128,7 @@ Never attempt to modify it directly.")
         (when (<= (projectIDE-session-point session) (point-max))
           (goto-char (projectIDE-session-point session)))
         (if (equal (word-at-point) (projectIDE-session-word session))
-            (progn
-              (message (buffer-file-name))
-              (recenter))
+            (recenter)
           (goto-char (point-min)))))))
 
 

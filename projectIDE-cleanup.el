@@ -200,10 +200,15 @@ For example, \"projectIDE-cleanup = *.elc\" will cleanup all elc files."
       (mapc 'projectIDE-delete-file remove-filelist)
       (mapc 'projectIDE-delete-directory remove-folderlist)
 
-      (projectIDE-message 'Info
-                          "Cleanup finished."
-                          t
-                          (projectIDE-caller 'projectIDE-cleanup)))))
+      (if (or remove-folderlist remove-filelist)
+          (projectIDE-message 'Info
+                              "Cleanup finished."
+                              t
+                              (projectIDE-caller 'projectIDE-cleanup))
+        (projectIDE-message 'Info
+                              "No cleanup needed."
+                              t
+                              (projectIDE-caller 'projectIDE-cleanup))))))
 
 
 
@@ -249,7 +254,10 @@ For example, \"projectIDE-cleanup = *.elc\" will cleanup all elc files."
                                    projectRoot
                                    (file-name-as-directory PROJECTIDE-CLEANUP-FOLDER)
                                    (file-name-as-directory choice))
-                                  projectRoot))))
+                                  projectRoot)
+    (projectIDE-message 'Info
+                        (format "Restored cleanup %s" choice)
+                        t))))
 
 (projectIDE-register-Mx '(projectIDE-cleanup projectIDE-restore-cleanup))
 

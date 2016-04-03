@@ -48,7 +48,7 @@
     (((class color) (min-colors 88) (background dark))
      :background "gray30"
      :foreground "cyan"))
-  "Basic face for highlighting."
+  "Face for project name in modeline."
   :group 'projectIDE-face)
 
 (defface projectIDE-project-folder-face
@@ -58,7 +58,7 @@
     (((class color) (min-colors 88) (background dark))
      :background "gray30"
      :foreground "gray80"))
-  "Basic face for highlighting."
+  "Face for project folder in modeline."
   :group 'projectIDE-face)
 
 (defface projectIDE-project-file-face
@@ -68,7 +68,7 @@
     (((class color) (min-colors 88) (background dark))
      :background "gray30"
      :foreground "yellow"))
-  "Basic face for highlighting."
+  "Face for project file in modeline."
   :group 'projectIDE-face)
 
 (defun projectIDE-generate-mode-line ()

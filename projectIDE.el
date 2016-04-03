@@ -487,6 +487,28 @@ Descrip.:\t Function list calling this function for debug purpose."
 
 
 
+(defun projectIDE-consolidate-record ()
+
+  "Remove invalid or expired projectIDE-record."
+
+  (let ((signatures (projectIDE-get-all-signatures)))
+
+    (dolist (signature signatures)
+      (unless (projectIDE-get-project-path signature)
+        (projectIDE-remove-record signature)))
+
+    (setq signatures (projectIDE-get-all-signatures))
+
+    (when (>= (length signatures) projectIDE-max-record-number)
+      ;; sorted to older first
+      (setq signatures (sort signatures (lambda (signature1 signature2) (time-less-p signature1 signature2))))
+      (dotimes (var (- (length signatures) (- projectIDE-max-record-number projectIDE-record-reduce-number)))
+        (projectIDE-remove-record (nth var signatures))))
+
+    (fout<<projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record (projectIDE-caller 'projectIDE-consolidate-record))))
+
+
+
 (defun projectIDE-identify-project (&optional buffer caller)
   ;; If buffer is not provided, it implies this function is possibily call by find-file-hook
   ;; With buffer provided it means this function is possibilty call by projectIDE-initialize or projectIDE-index-project
@@ -512,13 +534,14 @@ Type:\t\t symbol list
 Descrip.:\t Function list calling this function for debug purpose."
   
   (let (signature)
-    
+
+    ;; Comment out this so that project in project identified as the inner project
     ;; Find project in projectIDE-runtime-cache
-    (let ((opened-project (projectIDE-get-all-caching-signature)))
-      (while (and (not signature) (buffer-file-name buffer) (car opened-project))
-        (when (string-prefix-p (projectIDE-get-project-path (car opened-project)) (buffer-file-name buffer))
-          (setq signature (car opened-project)))
-        (setq opened-project (cdr opened-project))))
+    ;; (let ((opened-project (projectIDE-get-all-caching-signature)))
+    ;;   (while (and (not signature) (buffer-file-name buffer) (car opened-project))
+    ;;     (when (string-prefix-p (projectIDE-get-project-path (car opened-project)) (buffer-file-name buffer))
+    ;;       (setq signature (car opened-project)))
+    ;;     (setq opened-project (cdr opened-project))))
 
     ;; Search in project RECORD
     (unless signature
@@ -806,7 +829,7 @@ Descrip.:\t Function list calling this function for debug purpose."
         (throw 'Error nil))
       
       (unless (equal (projectIDE-project-name project) (projectIDE-get-project-name signature))
-        (projectIDE-set-project-name (projectIDE-project-name project) signature)
+        (projectIDE-set-project-name signature (projectIDE-project-name project))
         (fout<<projectIDE PROJECTIDE-RECORD-FILE 'projectIDE-runtime-record (projectIDE-caller 'projectIDE-update-project-config caller)))
       
       (projectIDE-set-cache-project signature project))
@@ -859,7 +882,12 @@ Descrip.:\t Function list calling this function for debug purpose."
       (projectIDE-set-file-cache signature)
       (projectIDE-set-file-cache-state signature 0))
     
-    (fdex-update (projectIDE-get-file-cache signature))
+    (with-temp-message
+        (projectIDE-message 'Info
+                            "Updating cache in progress. May take some time for large project."
+                            nil
+                            (projectIDE-caller 'projectIDE-update-cache-backend caller))
+      (fdex-update (projectIDE-get-file-cache signature)))
     
     (projectIDE-set-file-cache-state signature 2)
     
@@ -898,12 +926,15 @@ Descrip.:\t Function list calling this function for debug purpose."
           (unless (fdex-updateNext filehash)
             (fdex-updateRoot filehash)
             (projectIDE-set-file-cache-state signature 2)
-            (projectIDE-flag-association-expired signature)))
+            (when (projectIDE-background-generate-association? signature)
+              (projectIDE-flag-association-expired signature))))
          ((= state 2)
-          (unless (projectIDE-generate-association? signature)
+          (unless (projectIDE-background-generate-association? signature)
             (projectIDE-set-file-cache-state signature 1)
             (throw 'quit nil))
+          
           (let ((buffers (projectIDE-get-buffer-list signature))
+                (time (current-time))
                 done)
             (while (and (car buffers) (not done))
               (unless (projectIDE-get-file-association-state (car buffers))
@@ -911,7 +942,13 @@ Descrip.:\t Function list calling this function for debug purpose."
                 (setq done t))
               (setq buffers (cdr buffers)))
             (unless done
-              (projectIDE-set-file-cache-state signature 1)))))))))
+              (projectIDE-set-file-cache-state signature 1))
+            (when (> (time-to-seconds (time-subtract (current-time) time)) 1)
+              (projectIDE-message 'Warning
+                                  (format "projectIDE detects background service has been causing performance issue.
+You may try setting \"cachemode = 15\" or even  \"cachemode = 7\" in [%s] config file." (projectIDE-get-project-name signature))
+                                  t
+                                  (projectIDE-caller 'projectIDE-background-update-cache))))))))))
 
 
 
@@ -937,7 +974,7 @@ In simple term, it updates folders and files of the project."
                             (projectIDE-caller 'projectIDE-update-cache))
         (throw 'Error nil))
       
-      (projectIDE-update-cache-backend signature (and projectIDE-debug-mode (list 'projectIDE-update-cache)))
+      (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-update-cache))
       
       (when projectIDE-debug-mode
         (projectIDE-message 'Info
@@ -977,8 +1014,11 @@ Descrip.:\t Function list calling this function for debug purpose."
   
   (unless (projectIDE-get-cache signature)
     (let (cache)
-      (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer caller))
+      (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer caller))     
       (projectIDE-push-cache signature cache)
+
+      (unless (equal (fdex-get-rootPath (projectIDE-get-file-cache signature)) (projectIDE-get-project-path signature))
+        (projectIDE-set-file-cache signature))
 
       (when (projectIDE-get-opened-buffer signature)
         (projectIDE-clear-opened-buffer signature)))
@@ -1073,7 +1113,12 @@ This function is designed to advice before `save-buffers-kill-emacs'."
   (let ((signatures (projectIDE-get-all-caching-signature)))
     (dolist (signature signatures)
       (let ((cache (projectIDE-get-cache signature)))
-        (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer '(save-buffers-kill-emacs))))))
+        (with-temp-message
+            (projectIDE-message 'Info
+                                (format "Saving caching for [%s] ... " (projectIDE-get-project-name signature))
+                                nil
+                                (projectIDE-caller 'projectIDE-before-emacs-kill '(save-buffers-kill-emacs-hook)))
+         (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-track-buffer '(save-buffers-kill-emacs)))))))
   (setq projectIDE-write-out-cache nil)
   (save-some-buffers nil t)
   (dolist (buffer (projectIDE-get-buffer-list))
@@ -1260,56 +1305,6 @@ Descrip.:\t Function list calling this function for debug purpose."
 
 
 
-(defun projectIDE-get-folder-list (signature &optional full filter caller)
-  
-  "Get a folder list of project given by SIGNATURE.
-If FULL is non-nil, the file list contains full paths,
-otherwise contains paths relative to project root.
-
-FILTER is a predicate funtion accepting one argument
-to test each of the entry.
-
-CALLER is the function list calling this function.
-It is uesed for debugging purpose.
-
-Return
-Type:\t\t list of string
-Descrip.:\t A list of folder of given project.
-
-SIGNATURE
-Type:\t\t string
-Descrip.:\t A project based unique ID.
-
-FULL
-Typee:\t\t bool
-Descrip.:\t Return path relative to project root if nil.
-\t\t\t Otherwise return full path.
-
-FILTER
-Type:\t\t a predicate funtion
-Descrip.:\t A predicate function taking one string argument.
-\t\t\t The predicate function should return t if the argument is accepted.
-Example:\t (projectIDE-get-folder-list
-\t\t\t    (\"signature\" t (lambda (test) (if (string-match \"*/scr/*\" test) nil t))))
-
-CALLER
-Type:\t\t symbol list
-Descrip.:\t Function list calling this function for debug purpose."
-  
-  (when (projectIDE-pre-prompt-update-cache? signature)
-    (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-get-file-list caller)))
-
-  (if filter
-      (let ((folderlist (fdex-get-folderlist (projectIDE-get-file-cache signature) full))
-            folderlist-1)
-        (dolist (folder folderlist)
-          (when (funcall filter folder)
-            (setq folderlist-1 (nconc folderlist-1 (list folder)))))
-        folderlist-1)
-    (fdex-get-folderlist (projectIDE-get-file-cache signature) full)))
-
-
-
 (defun projectIDE-open-folder (prefix &optional otherwindow)
   
   "An interative function to prompt a folder for opening.
@@ -1356,8 +1351,16 @@ When OTHERWINDOW is provided, the folder will be open on other window."
       (dolist (source sources)
         (if project-prefix
             (progn
+              ;; Update cache pre prompt
+              (when  (projectIDE-pre-prompt-update-cache? source)
+                (projectIDE-update-cache-backend source (projectIDE-caller 'projectIDE-open-folder)))
+              
               (setq prompt (projectIDE-get-folder-list source nil nil (projectIDE-caller 'projectIDE-open-folder)))
               (setq prompt (mapcar (apply-partially 'concat project-prefix) prompt)))
+          
+          ;; Update cache pre prompt
+          (when  (projectIDE-pre-prompt-update-cache? source)
+            (projectIDE-update-cache-backend source (projectIDE-caller 'projectIDE-open-folder)))
           (setq prompt (nconc prompt (projectIDE-get-folder-list source t nil (projectIDE-caller 'projectIDE-open-folder))))))
       (setq choice (projectIDE-prompt "Open folder: " prompt))
       
@@ -1389,54 +1392,6 @@ in other window."
   (interactive "p")
   (funcall 'projectIDE-open-folder prefix t))
 
-(defun projectIDE-get-file-list (signature &optional full filter caller)
-  
-  "Get a file list of project given by SIGNATURE.
-If FULL is non-nil, the file list contains full paths,
-otherwise contains paths relative to project root.
-
-FILTER is a predicate funtion accepting one argument
-to test each of the entry.
-
-CALLER is the function list calling this function.
-It is uesed for debugging purpose.
-
-Return
-Type:\t\t list of string
-Descrip.:\t A list of file of given project.
-
-SIGNATURE
-Type:\t\t string
-Descrip.:\t A project based unique ID.
-
-FULL
-Typee:\t\t bool
-Descrip.:\t Return path relative to project root if nil.
-\t\t\t Otherwise return full path.
-
-FILTER
-Type:\t\t a predicate funtion
-Descrip.:\t A predicate function taking one string argument.
-\t\t\t The predicate function should return t if the argument is accepted.
-Example:\t (projectIDE-get-file-list
-\t\t\t    (\"signature\" t (lambda (test) (if (string-match \"*.cpp\" test) nil t))))
-
-CALLER
-Type:\t\t symbol list
-Descrip.:\t Function list calling this function for debug purpose."
-  
-  (when (projectIDE-pre-prompt-update-cache? signature)
-    (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-get-file-list caller)))
-
-  (if filter
-      (let ((filelist (fdex-get-filelist (projectIDE-get-file-cache signature) full))
-            filelist-1)
-        (dolist (file filelist)
-          (when (funcall filter file)
-            (setq filelist-1 (nconc filelist-1 (list file)))))
-        filelist-1)
-    (fdex-get-filelist (projectIDE-get-file-cache signature) full)))
-
 
 
 (defun projectIDE-open-file (prefix &optional otherwindow)
@@ -1456,6 +1411,8 @@ When OTHERWINDOW is provided, the file will be open on other window."
                           t
                           (projectIDE-caller 'projectIDE-open-file))
       (throw 'Error nil))
+
+    
     
     (let (sources
           prompt
@@ -1475,19 +1432,28 @@ When OTHERWINDOW is provided, the file will be open on other window."
                             t
                             (projectIDE-caller 'projectIDE-open-file))
         (throw 'Error nil))
-      
+
+            
       ;; Determined if project prefix should be used
       (when (and projectIDE-use-project-prefix (= (length sources) 1))
         (setq project-prefix
               (concat (file-name-as-directory (concat "[" (projectIDE-get-project-name (car sources)) "] ")) " ")))
-
+      
       ;; Create promt-file-list from different source
       (dolist (source sources)
         (if project-prefix
             (progn
+              ;; Update cache pre prompt
+              (when  (projectIDE-pre-prompt-update-cache? source)
+                (projectIDE-update-cache-backend source (projectIDE-caller 'projectIDE-open-file)))
+              
               (setq prompt (projectIDE-get-file-list source nil nil (projectIDE-caller 'projectIDE-open-file)))
               (setq prompt (mapcar (apply-partially 'concat project-prefix) prompt)))
+          ;; Update cache pre prompt
+          (when  (projectIDE-pre-prompt-update-cache? source)
+            (projectIDE-update-cache-backend source (projectIDE-caller 'projectIDE-open-file)))
           (setq prompt (nconc prompt (projectIDE-get-file-list source t nil (projectIDE-caller 'projectIDE-open-file))))))
+      
       (setq choice (projectIDE-prompt "Open file: " prompt))
       
       (when project-prefix
@@ -1524,19 +1490,18 @@ in other window."
   "Return a list of files which have same filename as BUFFER.
 
 Return
-Type\t\t: list of string
+Type:\t\t list of string
 Descrip.:\t A list of file paths having same filename as BUFFER.
 
 BUFFER
-Type\t\t: buffer
+Type:\t\t buffer
 Descrip.:\t The buffer being identified.
 \t\t\t If BUFFER is not provided, current buffer is used."
   
   (let* ((signature (projectIDE-get-Btrace-signature (or buffer (current-buffer))))
          (filename (file-name-nondirectory (buffer-file-name (or buffer (current-buffer)))))
          regexp)
-
-    ;;!!! need to take care java library
+    
     (while (not (equal filename (file-name-sans-extension filename)))
       (setq filename (file-name-sans-extension filename)))
     
@@ -1549,7 +1514,9 @@ Descrip.:\t The buffer being identified.
                          filename
                          "$"))
     
-    (projectIDE-get-file-list signature t (lambda (test) (string-match regexp test)))))
+    (projectIDE-get-file-list signature t
+                              (lambda (test) (string-match regexp test))
+                              (projectIDE-caller 'projectIDE-generate-association-list))))
 
 
 
@@ -1580,18 +1547,16 @@ When OTHERWINDOW is provided , associated file is opened in other window."
                             (projectIDE-caller 'projectIDE-switch-association))
         (throw 'Error nil))
       
-      (unless filelist
-        (if (projectIDE-generate-association? signature)
-            (progn
-              (and (projectIDE-pre-prompt-update-cache? signature)
-                   (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-switch-association)))
-              (setq filelist (projectIDE-generate-association-list))
-              (projectIDE-set-file-association filelist))
-          (projectIDE-message 'Warning
-                              (format "Project [%s] set to not generate file association.\nYou can change the behaviour by setting \"cachemode\" in \".projectIDE\" file." (projectIDE-get-project-name signature))
-                              t
-                              (projectIDE-caller 'projectIDE-switch-association))
-          (throw 'Error nil)))
+      (unless (and filelist (projectIDE-get-file-association-state))
+        (when (projectIDE-pre-prompt-update-cache? signature)
+             (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-switch-association)))
+        (with-temp-message
+            (projectIDE-message 'Info
+                                "Searching file association. May take some time for large project."
+                                nil
+                                (projectIDE-caller 'projectIDE-switch-association))
+            (setq filelist (projectIDE-generate-association-list)))
+        (projectIDE-set-file-association filelist))
       
       (if (= (length filelist) 1)
           (projectIDE-message 'Info
@@ -1662,7 +1627,12 @@ If PREFIX is provided, close all projects."
                (buffers (buffer-list))
                (cache (projectIDE-get-cache signature)))
           (when cache
-            (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-close-project)))
+            (with-temp-message
+                (projectIDE-message 'Info
+                                    (format "Saving caching for [%s] ... " (projectIDE-get-project-name signature))
+                                    nil
+                                    (projectIDE-caller 'projectIDE-close-project))
+              (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-close-project))))
           (dolist (buffer buffers)
             (when (equal signature (projectIDE-get-Btrace-signature buffer))
               (kill-buffer buffer))))
@@ -1673,7 +1643,12 @@ If PREFIX is provided, close all projects."
         (dolist (signature signatures)
           (setq cache (projectIDE-get-cache signature))
           (when cache
-            (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-close-project))))
+            (with-temp-message
+                (projectIDE-message 'Info
+                                    (format "Saving caching for [%s] ... " (projectIDE-get-project-name signature))
+                                    nil
+                                    (projectIDE-caller 'projectIDE-close-project))
+              (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-close-project)))))
         (dolist (buffer buffers)
           (kill-buffer buffer))))
     
@@ -1736,6 +1711,16 @@ If PREFIX is provided, switch to buffer of all opened project."
         (throw 'Error nil))
       
       (find-file configfile))))
+
+
+
+(defun projectIDE-M-x (choice)
+
+  "ProjectIDE command prompt."
+
+  (interactive
+   (list (projectIDE-prompt "Command: " projectIDE-M-x-functions)))
+  (call-interactively (intern choice)))
 
 ;;; Fetching data function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1909,11 +1894,9 @@ If PREFIX is provided, switch to buffer of all opened project."
           (setq projectIDE-runtime-cache (make-hash-table :test 'equal :size 20)
                 projectIDE-runtime-Btrace (make-hash-table :test 'eq :size 40)
                 projectIDE-non-persist-memory (make-hash-table :test 'eq :size 100))
-          (projectIDE-message 'Info
-                              "projectIDE starts successfully."
-                              t
-                              (projectIDE-caller 'projectIDE-initialize))
 
+          (projectIDE-consolidate-record)
+          
           (add-hook 'find-file-hook 'projectIDE-identify-project)
           (add-hook 'kill-buffer-hook 'projectIDE-untrack-buffer)
           (advice-add 'save-buffers-kill-emacs :before 'projectIDE-before-emacs-kill)
@@ -1939,7 +1922,12 @@ If PREFIX is provided, switch to buffer of all opened project."
 
           (projectIDE-module-initialize)
           (projectIDE-session-initialize)
-          (run-hooks 'projectIDE-initialize-hook))
+          (run-hooks 'projectIDE-initialize-hook)
+
+          (projectIDE-message 'Info
+                              "projectIDE starts successfully."
+                              t
+                              (projectIDE-caller 'projectIDE-initialize)))
       
       (projectIDE-message 'Error
                           (format "projectIDE starts fail. Unable to read record file at %s" PROJECTIDE-RECORD-FILE)

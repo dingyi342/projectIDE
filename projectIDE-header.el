@@ -62,6 +62,7 @@
 ;;fff (defun projectIDE-append (list1 list2))
 ;;fff (defun projectIDE-wildcard-to-regexp (wildcard))
 ;;fff (defun projectIDE-manipulate-filter (projectRoot list))
+;;fff (defun projectIDE-get-folder-list (signature &optional full filter caller))
 ;;fff (defun projectIDE-prompt (prompt choices &optional initial-input))
 ;;fff (defun projectIDE-read-file-name (prompt &optional dir default-filename mustmatch initial predicate))
 ;;fff (defun projectIDE-read-directory-name (prompt &optional dir default-dirname mustmatch initial))
@@ -268,6 +269,100 @@ Descip.:\t A string list which each entry is to be prefixed."
 
 
 
+(defun projectIDE-get-file-list (signature &optional full filter caller)
+  
+  "Get a file list of project given by SIGNATURE.
+If FULL is non-nil, the file list contains full paths,
+otherwise contains paths relative to project root.
+
+FILTER is a predicate funtion accepting one argument
+to test each of the entry.
+
+CALLER is the function list calling this function.
+It is uesed for debugging purpose.
+
+Return
+Type:\t\t list of string
+Descrip.:\t A list of file of given project.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID.
+
+FULL
+Typee:\t\t bool
+Descrip.:\t Return path relative to project root if nil.
+\t\t\t Otherwise return full path.
+
+FILTER
+Type:\t\t a predicate funtion
+Descrip.:\t A predicate function taking one string argument.
+\t\t\t The predicate function should return t if the argument is accepted.
+Example:\t (projectIDE-get-file-list
+\t\t\t    (\"signature\" t (lambda (test) (if (string-match \"*.cpp\" test) nil t))))
+
+CALLER
+Type:\t\t symbol list
+Descrip.:\t Function list calling this function for debug purpose."
+  
+  (if filter
+      (let ((filelist (fdex-get-filelist (projectIDE-get-file-cache signature) full))
+            filelist-1)
+        (dolist (file filelist)
+          (when (funcall filter file)
+            (setq filelist-1 (nconc filelist-1 (list file)))))
+        filelist-1)
+    (fdex-get-filelist (projectIDE-get-file-cache signature) full)))
+
+
+
+(defun projectIDE-get-folder-list (signature &optional full filter caller)
+  
+  "Get a folder list of project given by SIGNATURE.
+If FULL is non-nil, the file list contains full paths,
+otherwise contains paths relative to project root.
+
+FILTER is a predicate funtion accepting one argument
+to test each of the entry.
+
+CALLER is the function list calling this function.
+It is uesed for debugging purpose.
+
+Return
+Type:\t\t list of string
+Descrip.:\t A list of folder of given project.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID.
+
+FULL
+Typee:\t\t bool
+Descrip.:\t Return path relative to project root if nil.
+\t\t\t Otherwise return full path.
+
+FILTER
+Type:\t\t a predicate funtion
+Descrip.:\t A predicate function taking one string argument.
+\t\t\t The predicate function should return t if the argument is accepted.
+Example:\t (projectIDE-get-folder-list
+\t\t\t    (\"signature\" t (lambda (test) (if (string-match \"*/scr/*\" test) nil t))))
+
+CALLER
+Type:\t\t symbol list
+Descrip.:\t Function list calling this function for debug purpose."
+
+  (if filter
+      (let ((folderlist (fdex-get-folderlist (projectIDE-get-file-cache signature) full))
+            folderlist-1)
+        (dolist (folder folderlist)
+          (when (funcall filter folder)
+            (setq folderlist-1 (nconc folderlist-1 (list folder)))))
+        folderlist-1)
+    (fdex-get-folderlist (projectIDE-get-file-cache signature) full)))
+
+
+
 (defun projectIDE-prompt (prompt choices
                                  &optional predicate require-match initial-input hist def inherit-input-method)
   
@@ -330,6 +425,7 @@ Descrip.:\t An expanded directory name."
       (expand-file-name (read-directory-name prompt dir default-dirname mustmatch initial))))
 
 
+
 (defun projectIDE-dired (dirname &optional switches)
 
   "Open dired with DIRNAME.
@@ -338,6 +434,7 @@ See `dired' for details."
   (if (fboundp projectIDE-dired-function)
       (funcall projectIDE-dired-function dirname switches)
     (dired dirname switches)))
+
 
 
 (defun projectIDE-register-Mx (functions)
@@ -717,7 +814,7 @@ See `completing-read' for details."
 ;;vvv (defconst projectIDE-CACHEMODE-background-update-cache)
 ;;vvv (defconst projectIDE-CACHEMODE-update-cache-pre-prompt)
 ;;vvv (defconst projectIDE-CACHEMODE-update-cache-important-command)
-;;vvv (defconst projectIDE-CACHEMODE-generate-association)
+;;vvv (defconst projectIDE-CACHEMODE-background-generate-association)
 ;;vvv (defcustom projectIDE-default-cachemode)
 ;;vvv (defcustom projectIDE-default-exclude)
 ;;vvv (defcustom projectIDE-default-whitelist)
@@ -745,27 +842,27 @@ Must not change.")
 (defconst projectIDE-CACHEMODE-background-update-cache 2
   "[00000010] Do background update cache from time to time
 if project is opened.")
-(defconst projectIDE-CACHEMODE-update-cache-pre-prompt 4
-  "[00000100] Fully update cache before any promt.")
-(defconst projectIDE-CACHEMODE-update-cache-important-command 8
+(defconst projectIDE-CACHEMODE-update-cache-important-command 4
   "[00001000] Fully update cache before important command like compile.")
-(defconst projectIDE-CACHEMODE-generate-association 16
+(defconst projectIDE-CACHEMODE-update-cache-pre-prompt 8
+  "[00000100] Fully update cache before any promt.")
+(defconst projectIDE-CACHEMODE-background-generate-association 16
   "[00010000] Generate file association in background.
 Should be turned off for large project.")
 
 (defcustom projectIDE-default-cachemode
   (logior projectIDE-CACHEMODE-open-project-update-cache
           projectIDE-CACHEMODE-background-update-cache
-          projectIDE-CACHEMODE-update-cache-pre-prompt
           projectIDE-CACHEMODE-update-cache-important-command
-          projectIDE-CACHEMODE-generate-association)
+          projectIDE-CACHEMODE-update-cache-pre-prompt
+          projectIDE-CACHEMODE-background-generate-association)
 
   "Default cache mode for projects.
 `projectIDE-CACHEMODE-open-project-update-cache' = 1
 `projectIDE-CACHEMODE-background-update-cache' = 2
-`projectIDE-CACHEMODE-update-cache-pre-prompt' = 4
-`projectIDE-CACHEMODE-update-cache-important-command' = 8
-`projectIDE-CACHEMODE-generate-association' = 16
+`projectIDE-CACHEMODE-update-cache-important-command' = 4
+`projectIDE-CACHEMODE-update-cache-pre-prompt' = 8
+`projectIDE-CACHEMODE-background-generate-association' = 16
 A sum of these cache modes you want to enable."
   
   :tag "Default cache mode"
@@ -1216,10 +1313,22 @@ Never attempt to modify it directly.")
   reserve-field-3
   )
 
+(defcustom projectIDE-max-record-number 200
+  "Maximum projectIDE-record in projectIDE-runtime-record."
+  :tag "Maximum project record."
+  :type 'integer
+  :group 'projectIDE-global)
+(defcustom projectIDE-record-reduce-number 50
+  "Number of record reduce when it reaches maximum project record."
+  :tag "Project record reduce number"
+  :type 'integer
+  :group 'projectIDE-global)
+
 ;;; Getter and setter function
 ;;fff (defun projectIDE-get-all-signatures ())
 ;;fff (defun projectIDE-get-all-records ())
 ;;fff (defun projectIDE-get-record (signature))
+;;fff (defun projectIDE-remove-record (signature))
 ;;fff (defun projectIDE-get-signature-by-path (path &optional caller))
 ;;fff (defun projectIDE-get-project-name (signature))
 ;;fff (defun projectIDE-get-project-path (signature))
@@ -1270,6 +1379,18 @@ Type:\t\t string
 Descrip.:\t A project based unique ID."
   
   (gethash signature projectIDE-runtime-record))
+
+
+
+(defun projectIDE-remove-record (signature)
+
+  "Remove record object by SIGNATURE in projectIDE-runtime-record.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t A project based unique ID."
+  
+  (remhash signature projectIDE-runtime-record))
 
 
 
@@ -1811,7 +1932,7 @@ Descrip.:\t A project based unique ID."
 
 
 
-(defun projectIDE-generate-association? (signature)
+(defun projectIDE-background-generate-association? (signature)
   
   "Return t if project of given SIGNATURE should generate file association list.
 
@@ -1823,10 +1944,10 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
   
-  (eq projectIDE-CACHEMODE-generate-association
+  (eq projectIDE-CACHEMODE-background-generate-association
       (ignore-errors
         (logand
-         projectIDE-CACHEMODE-generate-association
+         projectIDE-CACHEMODE-background-generate-association
          (projectIDE-project-cachemode
           (projectIDE-cache-project (gethash signature projectIDE-runtime-cache)))))))
 
@@ -1912,7 +2033,7 @@ BUFFER
 Type:\t\t Emacs buffer
 Descrip.:\t If buffer is not provided, current buffer is used."
 
-  (let ((signature (gethash buffer projectIDE-runtime-Btrace))
+  (let ((signature (gethash (or buffer (current-buffer)) projectIDE-runtime-Btrace))
         table
         association)
     (if (and signature
@@ -1949,9 +2070,9 @@ Descrip.:\t A project based unique ID."
 
   (let (return)
     (dolist (elt list)
-      (let ((elt-1 elt)
-            word
-            filter)
+      (lexical-let ((elt-1 elt)
+                    word
+                    filter)
         (cond
          ((string-match (concat (file-name-as-directory "\\${root}") "*") elt-1)
           (while (string-match (concat (file-name-as-directory "\\${root}") "*") elt-1)
@@ -1991,7 +2112,7 @@ Descrip.:\t A project based unique ID."
                   (projectIDE-get-folder-list signature
                                               t
                                               (and filter
-                                         (lambda (elt) (if (string-match filter elt) t nil)))))
+                                                   (lambda (elt) (if (string-match filter elt) t nil)))))
                  return)))
          (t
            (push elt-1 return)))))
@@ -2039,32 +2160,22 @@ Descrip.:\t A project based unique ID.
 CACHE
 Type:\t\t projectIDE-cache object
 Descrip.:\t The cache object to be put in projectIDE-runtime-cache."
-
-  (print "FUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKk")
+  
   (puthash signature cache projectIDE-runtime-cache)
   
   (unless (gethash (concat signature "modulenonpersist") projectIDE-runtime-cache)
     (puthash (concat signature "modulenonpersist") (make-hash-table :size 100) projectIDE-runtime-cache))
 
     (when (file-readable-p (concat PROJECTIDE-MODULE-CACHE-PATH signature))
-    (print "FUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKk")
       (let (modulepersist-cache)
         (and
          (fin>>projectIDE (concat PROJECTIDE-MODULE-CACHE-PATH signature) 'modulepersist-cache (projectIDE-caller 'projectIDE-push-cache))
          (hash-table-p modulepersist-cache)
-         (puthash (concat signature "modulepersist") modulepersist-cache projectIDE-runtime-cache)
-         (print "FUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKk")
-         (pp modulepersist-cache))))
+         (puthash (concat signature "modulepersist") modulepersist-cache projectIDE-runtime-cache))))
   (unless (gethash (concat signature "modulepersist") projectIDE-runtime-cache)
     (puthash (concat signature "modulepersist") (make-hash-table :size 100) projectIDE-runtime-cache))
   
-  (when (eq projectIDE-CACHEMODE-generate-association
-            (ignore-errors
-              (logand
-               projectIDE-CACHEMODE-generate-association
-               (projectIDE-project-cachemode
-                (projectIDE-cache-project cache)))))
-    (puthash (concat signature "association") (make-hash-table :size 30 :test 'equal) projectIDE-runtime-cache)))
+  (puthash (concat signature "association") (make-hash-table :size 30 :test 'equal) projectIDE-runtime-cache))
 
 
 
@@ -2076,16 +2187,22 @@ SIGNATURE
 Type:\t\t string
 Descrip.:\t A project based unique ID."
 
+  (with-temp-message
+      (projectIDE-message 'Info
+                          (format "Saving caching for [%s] ... " (projectIDE-get-project-name signature))
+                          nil
+                          (projectIDE-caller 'projectIDE-pop-cache))
 
-  (when projectIDE-write-out-cache
-    (let ((cache (gethash signature projectIDE-runtime-cache)))
-      (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache
+    (when projectIDE-write-out-cache
+      (let ((cache (gethash signature projectIDE-runtime-cache)))
+        (fout<<projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache
+                          (projectIDE-caller 'projectIDE-pop-cache))))
+    (remhash signature projectIDE-runtime-cache)
+
+    (let ((cache (gethash (concat signature "modulepersist") projectIDE-runtime-cache)))
+      (fout<<projectIDE (concat PROJECTIDE-MODULE-CACHE-PATH signature) 'cache
                         (projectIDE-caller 'projectIDE-pop-cache))))
-  (remhash signature projectIDE-runtime-cache)
-
-  (let ((cache (gethash (concat signature "modulepersist") projectIDE-runtime-cache)))
-    (fout<<projectIDE (concat PROJECTIDE-MODULE-CACHE-PATH signature) 'cache
-                      (projectIDE-caller 'projectIDE-pop-cache)))
+  
   (remhash (concat signature "modulepersist") projectIDE-runtime-cache)
   
   (remhash (concat signature "association") projectIDE-runtime-cache)
@@ -2523,6 +2640,7 @@ Never attempt to modify it directly.")
 
 
 (defun projectIDE-get-module-persist-memory (signature var)
+  
   "Get value from in persist memory of module specified by SIGNATURE."
   
   (let (cache)

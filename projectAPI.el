@@ -4,7 +4,6 @@
 ;; Author: Mola-T <Mola@molamola.xyz>
 ;; URL: https://github.com/mola-T/projectIDE
 ;; Version: 1.0
-;; Package-Requires: ((cl-lib.el "0.5"))
 ;; Keywords: project, convenience
 ;;
 ;;; License:
@@ -27,6 +26,7 @@
 ;;
 ;;; Commentary:
 ;;
+;; This file is part of projectIDE.
 ;; This files provides API for developing projectIDE modules.
 ;;
 ;;; code:
@@ -41,8 +41,15 @@
   projectIDE-p)
 
 
+(defalias 'projectAPI-init-maybe 'projectIDE-initialize-maybe
 
-(defun projectAPI-current-buffer-project ()
+  "Try to initialize projectIDE if it is not running.
+Do nothing if projectIDE is already running.
+Return t if projectIDE is initialized.")
+
+
+
+(defalias 'projectAPI-current-buffer-project 'projectIDE-get-Btrace-signature
   
   "Return the signature of current buffer.
 If current buffer is not a member of a project,
@@ -57,9 +64,9 @@ a temp buffer.  See `projectAPI-active-project' for its detail.
 Return
 Type\t\t: string
 Descrip.:\t A project signature.
-\t\t\t  A project based unique ID."
-  
-  (projectIDE-get-Btrace-signature))
+\t\t\t  A project based unique ID.")
+
+
 
 (defun projectAPI-active-project ()
   
@@ -198,6 +205,8 @@ Example:\t (projectAPI-project-files
                               filter
                               (projectIDE-caller 'projectAPI-project-files))))
 
+
+
 (defun projectAPI-project-folders (&optional signature shortpath filter)
 
   "Return a list of folderw from project given by SIGNATURE.
@@ -239,17 +248,292 @@ Example:\t (projectAPI-project-folders
 
 
 
+(defun projectAPI-get-var (var &optional signature)
+
+  "Get config file variable with name VAR from project given by SIGNATURE.
+
+Return
+Type:\t\t list of string or nil
+Descrip.:\t If VAR has been defined in config file,
+\t\t\t string in list will be return.
+\t\t\t If VAR has not been defined, nil will be return.
+Example:\t In config file:
+\t\t\t my-greeting = Hello have a nice day
+
+\t\t\t (projectAPI-get-var (projectAPI-active-project) 'my-greeting)
+\t\t\t ==>(\"Hello\" \"have\" \"a\" \"nice\" \"day\")
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of the variable.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t  A project based unique ID.
+\t\t\t If SIGNATURE is not provided, `projectAPI-active-project' is used."
+
+  (if (and var (symbolp var))
+      (projectIDE-get-module-var (or signature projectIDE-active-project)
+                                 var)
+    (error "VAR need to be a symbol")))
+
+
+
+(defun projectAPI-set-project-persist-memory (var value &optional signature)
+  
+  "Set VAR to VALUE in persist memory of project specified by SIGNATURE.
+The variable set by this function is
+1. project specific
+2. maintain across Emacs sections.
+The value set can get back by `projectAPI-get-project-persist-memory'.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of variable.
+
+VALUE
+Type:\t\t any
+Descrip.:\t Value of variable want to set.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t  A project based unique ID.
+\t\t\t If SIGNATURE is not provided, `projectAPI-active-project' is used."
+  
+  (if (and var (symbolp var))
+   (projectIDE-set-module-persist-memory (or signature projectIDE-active-project)
+                                        var
+                                        value)
+   (error "VAR need to be a symbol")))
+
+
+
+(defun projectAPI-get-project-persist-memory (var &optional signature)
+
+  "Get value of VAR set by `projectAPI-set-project-persist-memory'.
+If SIGNATURE is not provided, `projectAPI-active-project' is used.
+
+Return
+Type:\t\t any
+Descrip.:\t Value of VAR set by `projectAPI-set-project-persist-memory'.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of variable.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t  A project based unique ID.
+\t\t\t If SIGNATURE is not provided, `projectAPI-active-project' is used."
+
+  (if (and var (symbolp var))
+      (projectIDE-get-module-persist-memory (or signature projectIDE-active-project)
+                                            var)
+    (error "VAR need to be a symbol")))
+
+
+(defun projectAPI-set-project-nonpersist-memory (var value &optional signature)
+
+  "Set VAR to VALUE in non-persist memory of project specified by SIGNATURE.
+The variable set by this function is
+1. project specific
+2. cleaned up each Emacs session.
+The value set can get back by `projectAPI-get-project-nonpersist-memory'.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of variable.
+
+VALUE
+Type:\t\t any
+Descrip.:\t Value of variable want to set.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t  A project based unique ID.
+\t\t\t If SIGNATURE is not provided, `projectAPI-active-project' is used."
+  
+  (if (symbolp var)
+   (projectIDE-set-module-nonpersist-memory (or signature projectIDE-active-project)
+                                        var
+                                        value)
+   (error "VAR need to be a symbol")))
+
+
+
+(defun projectAPI-get-project-nonpersist-memory (var &optional signature)
+
+  "Get value of VAR set by `projectAPI-set-project-nonpersist-memory'.
+If SIGNATURE is not provided, `projectAPI-active-project' is used.
+
+Return
+Type:\t\t any
+Descrip.:\t Value of VAR set by `projectAPI-set-project-nonpersist-memory'.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of variable.
+
+SIGNATURE
+Type:\t\t string
+Descrip.:\t  A project based unique ID.
+\t\t\t If SIGNATURE is not provided, `projectAPI-active-project' is used."
+
+  (if (and var (symbolp var))
+      (projectIDE-get-module-nonpersist-memory (or signature projectIDE-active-project)
+                                            var)
+    (error "VAR need to be a symbol")))
+
+
+
+(defun projectAPI-set-persist-memory (var value)
+
+  "Set VAR to VALUE in persist memory in global.
+The variable set by this function is
+1. global
+2. maintained across Emacs session.
+The value set can get back by `projectAPI-get-persist-memory'.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of variable.
+
+VALUE
+Type:\t\t any
+Descrip.:\t Value of variable want to set."
+  
+  (if (and var (symbolp var))
+      (projectIDE-set-persist-memory var value)
+    (error "VAR need to be a symbol")))
+
+
+
+(defun projectAPI-get-persist-memory (var)
+
+  "Get value of VAR set by `projectAPI-set-persist-memory'.
+
+Return
+Type:\t\t any
+Descrip.:\t Value of VAR set by `projectAPI-set-persist-memory'.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of variable."
+
+  (if (and var (symbolp var))
+      (projectIDE-get-persist-memory var)
+    (error "VAR need to be a symbol")))
+
+
+
+(defun projectAPI-set-nonpersist-memory (var value)
+
+  "Set VAR to VALUE in non-persist memory in global.
+The variable set by this function is
+1. global
+2. cleaned up each Emacs session.
+The value set can get back by `projectAPI-get-nonpersist-memory'.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of variable.
+
+VALUE
+Type:\t\t any
+Descrip.:\t Value of variable want to set."
+  
+  (if (symbolp var)
+      (projectIDE-set-nonpersist-memory var value)
+    (error "VAR need to be a symbol")))
+
+
+
+(defun projectAPI-get-nonpersist-memory (var)
+
+  "Get value of VAR set by `projectAPI-set-nonpersist-memory'.
+
+Return
+Type:\t\t any
+Descrip.:\t Value of VAR set by `projectAPI-set-nonpersist-memory'.
+
+VAR
+Type:\t\t symbol
+Descrip.:\t Name of variable."
+
+  (if (and var (symbolp var))
+      (projectIDE-get-nonpersist-memory var)
+    (error "VAR need to be a symbol")))
+
+
 
 (defalias 'projectAPI-defun 'projectIDE-defun
-  "A project specific `defun'.")
+  
+  "A project specific `defun'.
+
+Functions defined through `projectAPE-defun' will be active
+if and only if the project requiring the module is in active state.
+It is managed by projectIDE.
+
+User can use `projectIDE-mod-key' to set keybind for function
+defined by `projectAPI-defun'. Keybind will be active IFF
+the project requiring the module is in active state.
+
+It is recommended only `interactive' functions are set
+by `projectAPI-defun' because non interactive function is usually
+invisible to user. The effect of activate and deactivate such an
+'invisible' function is not obvious.
+
+Functions defined through `projectAPI-defun' does not require
+to do `projectAPI-register-Mx' as they are registered automatically.")
+
+
+
 (defalias 'projectAPI-cl-defun 'projectIDE-cl-defun
-  "A project specific `cl-defun'.")
-(defalias 'projectAPI-defmacro 'projectIDE-defmacro
-  "A project specific `defmacro'.")
-(defalias 'projectAPI-cl-defmacro 'projectIDE-defmacro
-  "A project specific `defmacro'.")
+  
+  "A project specific `cl-defun'.
+
+Functions defined through `projectAPE-cl-defun' will be active
+if and only if the project requiring the module is in active state.
+It is managed by projectIDE.
+
+User can use `projectIDE-mod-key' to set keybind for function
+defined by `projectAPI-cl-defun'. Keybind will be active IFF
+the project requiring the module is in active state.
+
+It is recommended only `interactive' functions are set
+by `projectAPI-cl-defun' because non interactive function is usually
+invisible to user. The effect of activate and deactivate such an
+'invisible' function is not obvious.
+
+Functions defined through `projectAPI-cl-defun' does not require
+to do `projectAPI-register-Mx' as they are registered automatically.")
+
+
+
+(defun projectAPI-register-Mx (functions)
+
+  "Register FUNCTIONS to `projectIDE-M-x-functions'
+so that functions appear in `projectIDE-M-x'.
+FUNCTIONS can be a list of functions or just a single function.
+
+FUNCTIONS
+Type:		 symbol or symbol list
+Descrip.:	 Register to `projectIDE-M-x-functions'."
+
+  (if (listp functions)
+      (dolist (function functions)
+        (unless (and function (fboundp function))
+          (error "Function %s is not defined" (symbol-name function))))
+    (unless (and functions (fboundp functions))
+      (error "Function %s is not defined" (symbol-name functions))))
+
+  (projectIDE-register-Mx functions))
 
 ;; Functions that not provided at this moment.
+;; (defalias 'projectAPI-defmacro 'projectIDE-defmacro
+;;   "A project specific `defmacro'.")
+;; (defalias 'projectAPI-cl-defmacro 'projectIDE-defmacro
+;;   "A project specific `defmacro'.")
 ;; (defun projectAPI-update-cache-pre-prompt? ()
 ;;   "Return t if user want to update cache for `projectAPI-active-project'
 ;; before any prompt, otherwise nil."
