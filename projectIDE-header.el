@@ -63,10 +63,6 @@
 ;;fff (defun projectIDE-wildcard-to-regexp (wildcard))
 ;;fff (defun projectIDE-manipulate-filter (projectRoot list))
 ;;fff (defun projectIDE-get-folder-list (signature &optional full filter caller))
-;;fff (defun projectIDE-prompt (prompt choices &optional initial-input))
-;;fff (defun projectIDE-read-file-name (prompt &optional dir default-filename mustmatch initial predicate))
-;;fff (defun projectIDE-read-directory-name (prompt &optional dir default-dirname mustmatch initial))
-;;fff (defun projectIDE-dired (dirname &optional switches))
 ;;fff (defun projectIDE-register-Mx (functions))
 ;;fff (defun projectIDE-deregister-Mx (functions))
 
@@ -363,6 +359,227 @@ Descrip.:\t Function list calling this function for debug purpose."
 
 
 
+
+
+
+
+(defun projectIDE-register-Mx (functions)
+
+  "Register FUNCTIONS to `projectIDE-M-x-functions'.
+FUNCTIONS can be a list of functions or just a single function.
+
+FUNCTIONS
+Type:\t\t symbol or symbol list
+Descrip.:\t Register to `projectIDE-M-x-functions'."
+
+  (if (listp functions)
+      (dolist (function functions)
+        (cl-pushnew function projectIDE-M-x-functions :test 'eq))
+    (cl-pushnew functions projectIDE-M-x-functions :test 'eq)))
+
+
+
+(defun projectIDE-deregister-Mx (functions)
+
+  "Deregister FUNCTIONS from `projectIDE-M-x-functions'.
+FUNCTIONS can be a list of functions or just a single function.
+
+FUNCTIONS
+Type:\t\t symbol or symbol list
+Descrip.:\t Deregister from `projectIDE-M-x-functions'."
+
+  (if (listp functions)
+      (dolist (function functions)
+        (setq projectIDE-M-x-functions (cl-remove function projectIDE-M-x-functions :test 'eq)))
+    (setq projectIDE-M-x-functions (cl-remove functions projectIDE-M-x-functions :test 'eq))))
+
+;; General function ends
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; User interacting function
+;;fff (cl-defun projectIDE-generate-prompt-alist (source &key display-function duplicate-function))
+;;fff (defun projectIDE-fix-prompt-alist-duplicate (alist))
+;;fff (defun projectIDE-detach-prompt-alist (alist))
+;;fff (defun projectIDE-resolve-prompt-result (choice list))
+;;fff (defun projectIDE-prompt (prompt choices &optional initial-input))
+;;fff (defun projectIDE-read-file-name (prompt &optional dir default-filename mustmatch initial predicate))
+;;fff (defun projectIDE-read-directory-name (prompt &optional dir default-dirname mustmatch initial))
+;;fff (defun projectIDE-dired (dirname &optional switches))
+
+(cl-defun projectIDE-generate-prompt-alist (source &key display-function duplicate-function)
+
+  "Generate a suitable list or alist for user prompt.
+The prompting choices are based on SOURCE.
+It must be a list of unique entries.
+
+DISPLAY-FUNCTION is an unary function. It accept a single argument
+form source and return the dispaly form of that entry source.
+The returned display form must be a string.
+If DISPLAY-FUNCTION is provided, an alist with
+car being the display form and cdr being the source will be returned.
+If DISPLAY-FUNCTION is not provided, the source will be returned
+without modified.
+
+Since applying DISPLAY-FUNCTION may generate duplicate result,
+a DUPLICATE-FUNCTION is required to sort out any duplicated entries.
+DUPLICATE-FUNCTION is a function accepting an alist and return a modified
+alist so that there is no longer duplication at the key of the alist.
+If DUPLICATE-FUNCTION is not provided, it uses
+`projectIDE-fix-prompt-alist-duplicate' by default.
+It can also be 'inhabit if you are sure that there won't be duplicate
+after DUPLICATE-FUNCTION.
+
+After `projectIDE-generate-prompt-alist', it is safe to call
+`projectIDE-detach-prompt-alist' to get a normal list (not alist)
+for prompting since the display form should be unique.
+`projectIDE-resolve-prompt-result' can resolve the user prompt
+result from the alist.
+
+Return
+Type:\t\t list or alist
+Descrip.:\t Return alist if DISPLAY-FUNCTION is provided.
+Example:\t (projectIDE-generate-prompt-alist (number-sequence 1 5))
+\t\t\t ==> (1 2 3 4 5)
+\t\t\t (projectIDE-generate-prompt-alist (number-sequence 1 5)
+\t\t\t             :display-function 'number-to-string)
+\t\t\t ==> ((\"1\" . 1) (\"2\" . 2) (\"3\" . 3) (\"4\" . 4) (\"5\" . 5))
+
+SOURCE
+Type:\t\t list
+Descrip.:\t A list of unique entries for prompting.
+
+DISPLAY-FUNCTION
+Type:\t\t symbol or lambda expression
+Descrip.:\t An unary function accepts a single argument
+form source and return the dispaly form of that entry source.
+
+DUPLICATE-FUNCTION
+Type.:\t\t symbol or lambda expression or 'inhabit
+Descrip.:\t\t A unary funciton accepting an alist and resolve
+\t\t\t duplication of alist key.
+\t\t\t See `projectIDE-fix-prompt-alist-duplicate' for implementation."
+
+  (if (and source (car-safe source))
+      (if display-function
+          (let (return)
+            (dolist (var (nreverse (copy-tree source)))
+              (let ((display-form (funcall display-function var)))
+                (when display-form
+                  (push (cons display-form var) return))))
+            (cond
+             ((eq duplicate-function 'inhabit)
+              return)
+             (duplicate-function
+              (funcall duplicate-function return))
+             (t
+              (projectIDE-fix-prompt-alist-duplicate return))))
+        source)
+    nil))
+
+
+
+(defun projectIDE-fix-prompt-alist-duplicate (alist)
+
+  "Sort out duplication of key of ALIST and return the alist.
+For example ((\"foo\" . 1) (\"foo\" . 2) (\"foo\" . 3))
+is modified to ((\"foo-1\" . 1) (\"foo-2\" . 2) (\"foo-3\" . 3)).
+
+Return
+Type:\t\t alist
+Descrip.:\t A modified alist which key are modified so that no duplication.
+
+ALIST
+Type:\t\t alist
+Descrip.:\t Unprocessed alist."
+
+  (let ((alist (copy-tree alist))
+        (testlist (mapcar 'car alist))
+        duplicates
+        count)
+    
+    (setq testlist (sort testlist 'string-lessp))
+    
+    (while (car testlist)
+      (when (string= (car testlist) (cadr testlist))
+        (cl-pushnew (car testlist) duplicates :test 'equal))
+      (setq testlist (cdr testlist)))
+    
+    (while (car-safe duplicates)
+      (setq count 1)
+      (while (assoc (car duplicates) alist)
+        (setf (car (assoc (car duplicates) alist)) (concat (car duplicates) "-" (number-to-string count)))
+        (setq count (1+ count)))
+      (setq duplicates (cdr duplicates)))
+    
+    alist))
+
+
+
+(defun projectIDE-detach-prompt-alist (alist)
+
+  "Detach and return the display form from the ALIST returned by
+`projectIDE-generate-prompt-alist'. It can be resolved
+by `projectIDE-resolve-prompt-result'.
+
+Return
+Type:\t\t list
+Descrip.:\t This display form from ALIST.
+
+ALIST
+Type:\t\t alist
+Descrip.:\t Must be from `projectIDE-generate-prompt-alist'."
+
+  (if (car-safe (car-safe alist))
+      (mapcar 'car alist)
+    alist))
+
+
+
+(defun projectIDE-resolve-prompt-result (choice list)
+
+  "Resolve the prompt result CHOICE from LIST.
+LIST is the list generated by `projectIDE-generate-prompt-alist'.
+
+Return
+Type:\t\t any
+Descrip.:\t The associated source value from display form CHOICE.
+
+CHOICE
+Type:\t\t string
+Descrip.:\t The choice return from user prompt.
+
+LIST
+Type:\t\t list or alist
+Descrip.:\t List or alist generated by `projectIDE-generate-prompt-alist'"
+
+  (if (car-safe (car-safe list))
+      (cdr-safe (assoc choice list))
+    (if (car-safe list)
+        choice
+      nil)))
+
+
+
 (defun projectIDE-prompt (prompt choices
                                  &optional predicate require-match initial-input hist def inherit-input-method)
   
@@ -437,37 +654,14 @@ See `dired' for details."
 
 
 
-(defun projectIDE-register-Mx (functions)
+(defun projectIDE-open (entry)
 
-  "Register FUNCTIONS to `projectIDE-M-x-functions'.
-FUNCTIONS can be a list of functions or just a single function.
+  (when (file-exists-p entry)
+   (if (file-directory-p entry)
+      (projectIDE-dired entry)
+     (find-file entry))))
 
-FUNCTIONS
-Type:\t\t symbol or symbol list
-Descrip.:\t Register to `projectIDE-M-x-functions'."
-
-  (if (listp functions)
-      (dolist (function functions)
-        (cl-pushnew function projectIDE-M-x-functions :test 'eq))
-    (cl-pushnew functions projectIDE-M-x-functions :test 'eq)))
-
-
-
-(defun projectIDE-deregister-Mx (functions)
-
-  "Deregister FUNCTIONS from `projectIDE-M-x-functions'.
-FUNCTIONS can be a list of functions or just a single function.
-
-FUNCTIONS
-Type:\t\t symbol or symbol list
-Descrip.:\t Deregister from `projectIDE-M-x-functions'."
-
-  (if (listp functions)
-      (dolist (function functions)
-        (setq projectIDE-M-x-functions (cl-remove function projectIDE-M-x-functions :test 'eq)))
-    (setq projectIDE-M-x-functions (cl-remove functions projectIDE-M-x-functions :test 'eq))))
-
-;; General function ends
+;; User interating funciton ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -997,6 +1191,9 @@ It can be either name or path."
   :type 'bool
   :group 'projectIDE-opening)
 
+(defvar projectIDE-open-project-prompt-resolve-duplicate nil
+  "The function to resolve duplicate project name when opening project.
+If nil `projectIDE-fix-prompt-alist-duplicate' is used.")
 ;; Project or file opening variable ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1117,6 +1314,33 @@ Can only be \"above\" or \"below\""
 ;; Project window ends
 ;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; projectIDE-go
+
+(defcustom projectIDE-go-test-function nil
+  "A list of functions which determine and return file at point."
+  :group 'projectIDE-global
+  :type '(repeat function))
+
+;; projectIDE-go ends here
+;;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 

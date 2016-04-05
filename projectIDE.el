@@ -845,6 +845,7 @@ Descrip.:\t Function list calling this function for debug purpose."
 
 
 (defun projectIDE-update-cache-backend (signature &optional caller)
+  
   "Perform a complete update on cache given by SIGNATURE.
 
 CALLER is the function list calling this function.
@@ -1100,7 +1101,9 @@ It flags the newly created file to cache at priority."
   (when (and projectIDE-priority-update-file (equal (cdr projectIDE-priority-update-file) (buffer-file-name)))
     (projectIDE-track-buffer (car projectIDE-priority-update-file) (cdr projectIDE-priority-update-file))
     (fdex-add-priority-update-path (projectIDE-get-file-cache (car projectIDE-priority-update-file))
-                                   (file-name-directory (buffer-file-name))))
+                                   (file-name-directory (buffer-file-name)))
+    (when (projectIDE-get-file-association)
+      (projectIDE-set-file-association (projectIDE-add-to-list (projectIDE-get-file-association) (buffer-file-name)))))
   (setq projectIDE-priority-update-file nil))
 
 
@@ -1148,7 +1151,6 @@ This function is designed to advice before `save-buffers-kill-emacs'."
 
 
 ;;; Fetching data function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;;fff (defun projectIDE-get-project-list ())
 ;;fff (defun projectIDE-open-project (&optional caller)) - I
 ;;fff (defun projectIDE-get-folder-list (signature &optional full filter caller))
 ;;fff (defun projectIDE-open-folder (prefix &optional otherwindow)) -I
@@ -1162,57 +1164,6 @@ This function is designed to advice before `save-buffers-kill-emacs'."
 ;;fff (defun projectIDE-close-project ()) -I
 ;;fff (defun projectIDE-switch-project-buffer (prefix)) -I
 ;;fff (defun projectIDE-open-config-file ()) -I
-
-(defun projectIDE-get-project-list ()
-  
-  "Return a list of three lists of projects from projectIDE-runtime-record.
-
-The first list is a list of project names.
-The second list is a list of project root paths.
-The third list is a list of project signatures-1.
-
-The nth item in these lists are pointing to same project.
-
-Return
-Type:\t\t list of three lists
-Descip.:\t Relative items in each list
-\t\t\t represent a record in projectIDE-runtime-record.
-
-Example:\t ((\"foo\" \"bar\")
-\t\t\t (\"path-of-foo\" \"path-of-bar\")
-\t\t\t (\"signature-of-foo\" \"signature-of-bar\"))"
-  
-  (let ((signatures (projectIDE-get-all-signatures))
-        paths
-        names)
-    (setq signatures (sort signatures (lambda (record1 record2) (time-less-p (projectIDE-get-project-last-open record1)
-                                                                             (projectIDE-get-project-last-open record2)))))
-    (dolist (signature signatures)
-      (setq paths (nconc paths (list (projectIDE-get-project-path signature))))
-      (setq names (nconc names (list (projectIDE-get-project-name signature)))))
-
-    ;; Solving duplicate project name
-    (let ((max (1- (or (length names) 1)))
-          (i 0)
-          j
-          count)
-      (while (< i max)
-        (setq j (1+ i))
-        (setq count 1)
-        (let ((test (nth i names))
-              modified)
-          (while (<= j max)
-            (when (equal test (nth j names))
-              (setf (nth j names) (concat (nth j names) "-" (int-to-string (setq count (1+ count)))))
-              (setq modified t))
-            (setq j (1+ j)))
-          (when modified
-            (setf (nth i names) (concat (nth i names) "-1"))))
-        (setq i (1+ i))))
-    
-    (list names paths signatures)))
-
-
 
 (defun projectIDE-open-project (&optional caller)
   
@@ -1234,74 +1185,90 @@ Descrip.:\t Function list calling this function for debug purpose."
                           (projectIDE-caller 'projectIDE-open-project caller))
       (throw 'Error nil))
     
-    (let* ((list (projectIDE-get-project-list))
-           (names (nth 0 list))
-           (paths (nth 1 list))
-           (signatures (nth 2 list))
-           choice
-           signature
-           projectRoot
-           project
-           cache
-           opened-buffer)
+    (let (promptlist
+          choices)
 
+      ;; Get all project singnatures sorted by last open time
+      (setq promptlist
+            (sort (projectIDE-get-all-signatures)
+                  (lambda (record1 record2)
+                    (time-less-p (projectIDE-get-project-last-open record1)
+                                 (projectIDE-get-project-last-open record2)))))
+
+      ;; Get the prompting alist
       (cond
        ((eq projectIDE-open-project-prompt-type 'path)
-        (setq choice (projectIDE-prompt "Choose project: " paths))
-        (setq signature (nth (cl-position choice paths :test 'equal) signatures)))
+        (setq promptlist (projectIDE-generate-prompt-alist promptlist
+                                                           :display-function 'projectIDE-get-project-path
+                                                           :duplicate-function projectIDE-open-project-prompt-resolve-duplicate)))
        (t
-        (setq choice (projectIDE-prompt "Choose project: " names))
-        (setq signature (nth (cl-position choice names :test 'equal) signatures))))
-      
-      (setq projectRoot (projectIDE-get-project-path signature))
-      
-      ;; Check whether project has been opened
-      ;; If yes, just open the last opened buffer
-      (when (projectIDE-get-cache signature)
-        (projectIDE-message 'Info
-                            (format "Project [%s] had been opened already." (projectIDE-get-project-name signature))
-                            t
-                            (projectIDE-caller 'projectIDE-open-project caller))
-        (find-file (car (projectIDE-get-opened-buffer signature)))
-        (throw 'Error nil))
-      
-      ;; Check whether .projectIDE exists under path
-      (unless (file-exists-p (concat projectRoot PROJECTIDE-PROJECTROOT-IDENTIFIER))
-        (projectIDE-message 'Warning
-                            (format ".projectIDE file not exists under \"%s\".
-                                            If you moved the project, you can use `projectIDE-index-project' to reindex it." projectRoot)
-                            t
-                            (projectIDE-caller 'projectIDE-open-project caller))
-        (throw 'Error nil))
-      
-      ;; Check whether .projectIDE is able to be parsed
-      (unless (setq project (projectIDE-parse-config (concat projectRoot PROJECTIDE-PROJECTROOT-IDENTIFIER)))
-        (projectIDE-message 'Error
-                            (format "Open project terminated due to .projectIDE file under \"%s\" corrupted." projectRoot)
-                            t
-                            (projectIDE-caller 'projectIDE-open-project caller))
-        (throw 'Error nil))
-      
-      ;; check if there is cache file
-      (unless (file-exists-p (concat PROJECTIDE-CACHE-PATH signature))
-        (projectIDE-cache-create projectRoot))
-      
-      ;; check if cache load successfully
-      (unless (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-open-project caller))
-        (projectIDE-message 'Error
-                            (format "Unable to load project cache: [%s] \"%s\"" (projectIDE-get-project-name signature) signature)
-                            t
-                            (projectIDE-caller 'projectIDE-open-project caller))
-        (throw 'Error nil))
-      
-      (setq opened-buffer (nreverse (copy-tree (projectIDE-cache-opened-buffer cache))))
-      (if (and opened-buffer projectIDE-open-last-opened-files)
-          (dolist (file opened-buffer)
-            (when (file-readable-p file)
-              (find-file file)))
-        (projectIDE-dired projectRoot))
-      (unless (equal (projectIDE-get-Btrace-signature) signature)
-        (projectIDE-dired projectRoot)))))
+        (setq promptlist (projectIDE-generate-prompt-alist promptlist
+                                                           :display-function 'projectIDE-get-project-name
+                                                           :duplicate-function projectIDE-open-project-prompt-resolve-duplicate))))
+
+      ;; Get the project singature with user prompt
+      (setq choices (projectIDE-prompt "Choose project: " (projectIDE-detach-prompt-alist promptlist) nil t))
+
+      (unless (listp choices)
+        (setq choices (list choices)))
+
+      (dolist (choice choices)
+        (let (signature
+              projectRoot
+              cache
+              opened-buffer)
+
+          (catch 'project-error
+            (setq signature (projectIDE-resolve-prompt-result choice promptlist))
+            (setq projectRoot (projectIDE-get-project-path signature))
+            
+            ;; Check whether project has been opened
+            ;; If yes, just open the last opened buffer
+            (when (projectIDE-get-cache signature)
+              (find-file (car (projectIDE-get-opened-buffer signature)))
+              (projectIDE-message 'Info
+                                  (format "Project [%s] had been opened already." (projectIDE-get-project-name signature))
+                                  t
+                                  (projectIDE-caller 'projectIDE-open-project caller))
+              (throw 'project-error nil))
+            
+            ;; Check whether .projectIDE exists under path
+            (unless (file-exists-p (concat projectRoot PROJECTIDE-PROJECTROOT-IDENTIFIER))
+              (projectIDE-message 'Warning
+                                  (format ".projectIDE file not exists under \"%s\".
+If you moved the project, you can use `projectIDE-index-project' to reindex it." projectRoot)
+                                  t
+                                  (projectIDE-caller 'projectIDE-open-project caller))
+              (throw 'project-error nil))
+            
+            ;; Check whether .projectIDE is able to be parsed
+            (unless (projectIDE-parse-config (concat projectRoot PROJECTIDE-PROJECTROOT-IDENTIFIER))
+              (projectIDE-message 'Error
+                                  (format "Open project terminated due to .projectIDE file under \"%s\" corrupted." projectRoot)
+                                  t
+                                  (projectIDE-caller 'projectIDE-open-project caller))
+              (throw 'project-error nil))
+            
+            ;; check if there is cache file
+            (unless (file-exists-p (concat PROJECTIDE-CACHE-PATH signature))
+              (projectIDE-cache-create projectRoot))
+            
+            ;; check if cache load successfully
+            (unless (fin>>projectIDE (concat PROJECTIDE-CACHE-PATH signature) 'cache (projectIDE-caller 'projectIDE-open-project caller))
+              (projectIDE-message 'Error
+                                  (format "Unable to load project cache: [%s] \"%s\"" (projectIDE-get-project-name signature) signature)
+                                  t
+                                  (projectIDE-caller 'projectIDE-open-project caller))
+              (throw 'project-error nil))
+            
+            (setq opened-buffer (nreverse (copy-tree (projectIDE-cache-opened-buffer cache))))
+            (if (and opened-buffer projectIDE-open-last-opened-files)
+                (dolist (file opened-buffer)
+                  (when (file-readable-p file)
+                    (find-file file)))
+              (projectIDE-dired projectRoot))
+            (unless (equal (projectIDE-get-Btrace-signature) signature)
+              (projectIDE-dired projectRoot))))))))
 
 
 
@@ -1309,9 +1276,9 @@ Descrip.:\t Function list calling this function for debug purpose."
   
   "An interative function to prompt a folder for opening.
 The folder list prompted contains folders from project of current buffer.
-Unless current buffer is not a recorded project,
-it will project for all folders form opened projects instesd.
-When PREFIX is provided, the folder list contains folders from all opened projects.
+
+When PREFIX is provided, it will ask for regexp first to get interseted list
+of prompt.
 When OTHERWINDOW is provided, the folder will be open on other window."
   
   (interactive "p")
@@ -1322,65 +1289,89 @@ When OTHERWINDOW is provided, the folder will be open on other window."
                           t
                           (projectIDE-caller 'projectIDE-open-folder))
       (throw 'Error nil))
+
+    (unless projectIDE-active-project
+      (projectIDE-message 'Info
+                          "Current buffer is not a projectIDE project."
+                          t
+                          (projectIDE-caller 'projectIDE-open-folder))
+      (throw 'Error nil))
     
-    (let (sources
-          prompt
-          project-prefix
-          choice)
+    (lexical-let ((signature projectIDE-active-project)
+                  regexp ;; need lexical-let
+                  project-prefix
+                  promptlist
+                  choices)
       
-      ;; When prefixed, open folder from all current opened project.
-      (if (not (= prefix 1))
-          (setq sources (projectIDE-get-all-caching-signature))
-        (setq sources (list projectIDE-active-project))
-        (unless (car sources)
-          (setq sources (projectIDE-get-all-caching-signature))))
-      
-      (unless (car sources)
-        (projectIDE-message 'Warning
-                            "Current buffer is not an indexed project."
-                            t
-                            (projectIDE-caller 'projectIDE-open-folder))
-        (throw 'Error nil))
+      ;; When prefixed, asked for regexp to fetch interested prompt list
+      (unless (= prefix 1)
+        (setq regexp (read-string "Regexp to search folder: ")))
+      (when (equal "" regexp)
+        (setq regexp nil))
       
       ;; Determined if project prefix should be used
-      (when (and projectIDE-use-project-prefix (= (length sources) 1))
+      (when projectIDE-use-project-prefix
         (setq project-prefix
-              (concat (file-name-as-directory (concat "[" (projectIDE-get-project-name (car sources)) "] ")) " ")))
+              (concat (file-name-as-directory (concat "[" (projectIDE-get-project-name signature) "] ")) " ")))
 
-      ;; Create promt-folder-list from different source
-      (dolist (source sources)
-        (if project-prefix
-            (progn
-              ;; Update cache pre prompt
-              (when  (projectIDE-pre-prompt-update-cache? source)
-                (projectIDE-update-cache-backend source (projectIDE-caller 'projectIDE-open-folder)))
-              
-              (setq prompt (projectIDE-get-folder-list source nil nil (projectIDE-caller 'projectIDE-open-folder)))
-              (setq prompt (mapcar (apply-partially 'concat project-prefix) prompt)))
-          
-          ;; Update cache pre prompt
-          (when  (projectIDE-pre-prompt-update-cache? source)
-            (projectIDE-update-cache-backend source (projectIDE-caller 'projectIDE-open-folder)))
-          (setq prompt (nconc prompt (projectIDE-get-folder-list source t nil (projectIDE-caller 'projectIDE-open-folder))))))
-      (setq choice (projectIDE-prompt "Open folder: " prompt))
-      
-      (when project-prefix
-        (setq choice 
-              (concat
-               (projectIDE-get-project-path (car sources))
-               (string-remove-prefix project-prefix choice))))
-      
-      (unless (file-exists-p choice)
-        (projectIDE-message 'Warning
-                            (format "%s no longer exist.\nYou may need to call `projectIDE-update-cache' first." choice)
-                            t
-                            'projectIDE-open-folder)
-        (throw 'Error nil))
+      ;; Update cache pre prompt
+      (when (projectIDE-pre-prompt-update-cache? signature)
+        (projectIDE-update-cache-backend signature (projectIDE-caller 'projectIDE-open-folder)))
 
-      (when otherwindow
-        (projectIDE-other-window))
+      (if project-prefix
+          (if regexp
+              (setq promptlist
+                    (projectIDE-get-folder-list signature
+                                                nil
+                                                (lambda (elt)
+                                                  (if (string-match regexp elt) t nil))
+                                                (projectIDE-caller 'projectIDE-open-folder)))
+            (setq promptlist
+                    (projectIDE-get-folder-list signature
+                                                nil
+                                                nil
+                                                (projectIDE-caller 'projectIDE-open-folder))))
+        (if regexp
+              (setq promptlist
+                    (projectIDE-get-folder-list signature
+                                                t
+                                                (lambda (elt)
+                                                  (if (string-match regexp elt) t nil))
+                                                (projectIDE-caller 'projectIDE-open-folder)))
+            (setq promptlist
+                    (projectIDE-get-folder-list signature
+                                                t
+                                                nil
+                                                (projectIDE-caller 'projectIDE-open-folder)))))
+
+      (if project-prefix
+          (setq promptlist (projectIDE-generate-prompt-alist promptlist
+                                                             :display-function (lambda (elt) (concat project-prefix elt))
+                                                             :duplicate-function 'inhabit))
+        (setq promptlist (projectIDE-generate-prompt-alist promptlist)))
+
+      (setq choices (projectIDE-prompt "Open folder: " (projectIDE-detach-prompt-alist promptlist) nil t))
       
-      (dired choice))))
+      (unless (listp choices)
+        (setq choices (list choices)))
+
+      (dolist (choice choices)
+        (catch 'folder-error
+          (let ((folder (projectIDE-resolve-prompt-result choice promptlist)))
+
+            (unless (file-exists-p folder)
+              (projectIDE-message 'Warning
+                                  (format "%s no longer exist.\nYou may need to call `projectIDE-update-cache' first." choice)
+                                  t
+                                  'projectIDE-open-folder)
+              (throw 'folder-error nil))
+
+            (when otherwindow
+              (projectIDE-other-window))
+            
+            (projectIDE-dired folder)))))))
+
+
 
 
 
@@ -1473,6 +1464,7 @@ When OTHERWINDOW is provided, the file will be open on other window."
         (projectIDE-other-window))
       
       (find-file choice))))
+
 
 
 (defun projectIDE-open-file-other-window (prefix)
@@ -1721,6 +1713,44 @@ If PREFIX is provided, switch to buffer of all opened project."
   (interactive
    (list (projectIDE-prompt "Command: " projectIDE-M-x-functions)))
   (call-interactively (intern choice)))
+
+
+(defun projectIDE-go ()
+  
+  "An interactive function to go file at point."
+
+  (interactive)
+  
+  (let (candidates
+        choices)
+
+    (setq candidates
+          (projectIDE-add-to-list
+           candidates
+           (ffap-file-at-point)))
+
+    (pp candidates)
+    
+    (dolist (function projectIDE-go-test-function)
+      (when (fboundp function)
+        (let ((result (funcall function)))
+          (if (listp result)
+              (setq candidates (projectIDE-append candidates result))
+            (setq candidates (projectIDE-add-to-list candidates result))))))
+
+        
+    (dolist (elt candidates)
+      (if (file-exists-p elt)
+          (push elt choices)
+        (if (file-exists-p (concat (projectIDE-get-project-path (projectIDE-get-Btrace-signature)) elt))
+            (push (concat (projectIDE-get-project-path (projectIDE-get-Btrace-signature)) elt) choices)
+          (if (file-exists-p (concat (directory-file-name (projectIDE-get-project-path (projectIDE-get-Btrace-signature))) elt))
+              (push (concat (directory-file-name (projectIDE-get-project-path (projectIDE-get-Btrace-signature))) elt) choices)))))
+    
+    (when (>= (length choices) 1)
+      (if (= (length choices) 1)
+          (projectIDE-open (car choices))
+        (projectIDE-open (projectIDE-prompt "Open file: " choices nil t))))))
 
 ;;; Fetching data function ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1991,7 +2021,8 @@ Descrip.:\t Return t if projectIDE has been initialized.
    projectIDE-switch-association-other-window
    projectIDE-close-project
    projectIDE-switch-project-buffer
-   projectIDE-open-config-file))
+   projectIDE-open-config-file
+   projectIDE-go))
 
 (provide 'projectIDE)
 ;;; projectIDE.el ends here
